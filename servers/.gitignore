@@ -1,0 +1,3 @@
+*.pyc
+tensorflow_serving/*.pyc
+tensorflow_serving/apis/*.pyc
