@@ -1,0 +1,206 @@
+#!/usr/bin/expect
+set timeout 1000000
+set node [lindex $argv 0]
+set password [lindex $argv 1]
+
+set online_package_dir "/search/odin/Nick/GenerateWorkshop/online_package"
+set dest_dir "/search/odin"
+set tfpkg "tensorflow-1.2.0rc0-cp27-cp27mu-linux_x86_64.whl"
+
+
+##################################################################
+#       Send packages or files to node for environment setup     # 
+##################################################################
+#
+spawn ssh $node
+expect {
+    "yes/no" { 
+        send "yes\n" 
+        expect { "*password*" { send "$password\n" } }
+    }
+    "*password*" { send "$password\n" }
+    "]#" { send "ls\n" } 
+}
+expect "]#"
+send "cd $dest_dir\n" 
+expect "]#"
+send "mkdir -p online_package\n" 
+expect "]#"
+send "exit\n" 
+expect "]#"
+
+# pip
+spawn scp -r $online_package_dir/pip-9.0.1.tar.gz $node:$dest_dir
+expect {
+    "yes/no" { 
+        send "yes\n" 
+        expect { "*password*" { send "$password\n" } }
+    }
+    "*password*" { send "$password\n" }
+}
+expect "]#"
+
+# bashrc
+#spawn scp -r $online_package_dir/node_bashrc $node:/root/.bashrc
+#expect {
+#    "yes/no" { 
+#        send "yes\n" 
+#        expect { "*password*" { send "$password\n" } }
+#    }
+#    "*password*" { send "$password\n" }
+#}
+#expect "]#"
+
+# tensorflow wheel 
+#spawn scp $online_package_dir/$tfpkg $node:$dest_dir/online_package/
+#expect {
+#    "yes/no" { 
+#        send "yes\n" 
+#        expect { "*password*" { send "$password\n" } }
+#    }
+#    "*password*" { send "$password\n" }
+#    "]#" { send "ls\n"}
+#}
+#expect "]#" 
+
+# tensorflow_model_server
+#spawn scp $online_package_dir/tensorflow_model_server $node:$dest_dir/online_package/
+#expect {
+#    "yes/no" { 
+#        send "yes\n" 
+#        expect { "*password*" { send "$password\n" } }
+#    }
+#    "*password*" { send "$password\n" }
+#    "*" { send "ls\n"}
+#}
+#expect "]#"
+
+# cudnn-8.0
+#spawn scp $online_package_dir/cudnn-8.0-linux-x64-v5.1.tgz $node:$dest_dir/online_package/
+#expect {
+#    "yes/no" { 
+#        send "yes\n" 
+#        expect { "*password*" { send "$password\n" } }
+#    }
+#    "*password*" { send "$password\n" }
+#    "*" { send "ls\n"}
+#}
+#expect "]#"
+
+##################################################
+#                        Login                   #
+##################################################
+spawn ssh $node
+expect {
+    "yes/no" { 
+        send "yes\n" 
+        expect { "*password*" { send "$password\n" } }
+    }
+    "*password*" { send "$password\n" }
+    "]#" { send "ls\n" } 
+}
+expect "]#"
+
+#send "scp -r Nick@10.141.104.69:$online_package_dir/node_bashrc /root/.bashrc\n"
+#expect {
+#    "yes/no" { 
+#        send "yes\n" 
+#        expect { "*password*" { send "Nick\n" } }
+#    }
+#    "*password*" { send "Nick\n" }
+#}
+
+
+##################################################
+#                 Instal CUDA                    # 
+##################################################
+#
+
+# send "cd $dest_dir/online_package\n"
+# expect "]#"
+# send "tar -xvf cudnn*.tar*\n"
+# expect "]#"
+# send "tar -xvf cudnn-8.0*.tgz\n"
+# expect "]#"
+# send "rpm -ivh cuda-repo-rhel7-7-5-local-7.5-18.x86_64.rpm\n"
+# expect "]#" 
+# send "yum-complete-transaction\n"
+# expect "]#"
+# send "yum install cuda\n"
+# expect {
+#     "y/d/N]" { send "y\n" }
+#     "y/N]" { send "y\n" }
+#     "]#" { send "ls\n"}
+# }
+# expect {
+#     "y/d/N]" { send "y\n" }
+#     "y/N]" { send "y\n" }
+#     "]#" { send "ls\n"}
+# }
+# expect {
+#     "y/d/N]" { send "y\n" }
+#     "y/N]" { send "y\n" }
+#     "]#" { send "ls\n"}
+# }
+#send "/bin/cp -f cuda/include/* /usr/local/cuda/include/\n"
+#expect "]#" 
+#send "/bin/cp -f cuda/lib64/* /usr/local/cuda/lib64/\n"
+
+
+##########################################################
+#         Install pip and Tensorflow Package             #
+##########################################################
+send "cd $dest_dir\n"
+expect "]#" 
+send "tar -xvf pip*.tar*\n"
+expect "]#"
+send "yum install python-devel\n"
+expect {
+    "y/d/N]" { 
+        send "y\n" 
+        expect "]#"
+        send "cd ./pip-9.0.1\n"
+    }
+
+    "y/N]" { 
+        send "y\n" 
+        expect "]#"
+        send "cd ./pip-9.0.1\n"
+    }
+    "]#" { send "cd ./pip-9.0.1\n" }
+}
+expect "]#"
+send "python setup.py build\n"
+expect "]#"
+send "python setup.py install\n"
+expect "]#"
+
+#send "pip uninstall $tfpkg\n"
+#expect {
+#    "(y/n)*" { send "y\n" }
+#    "]#" { send "ls\n" }
+#    "not installed" { send "\n" }
+#}
+#expect "]#"
+#send "pip install --force --find-links=. $tfpkg\n"
+#expect  "]#" 
+
+
+############################################
+#       Get Nick's Workshop Repo           #
+############################################
+#send "cd $dest_dir; mkdir -p offline; cd offline\n"
+#expect "]#"
+#send "git clone http://gitlab.dev.sogou-inc.com/Nick/Workshop.git\n"
+#expect {
+#    "yes/no" { 
+#        send "yes\n" 
+#    }
+#    "]#" { send "ls\n" }
+#}
+#expect "]#"
+#send "cd Workshop\n"
+#expect "]#"
+#send "sh README\n"
+#expect "]#" 
+#send "/bin/cp $dest_dir/online_package/tensorflow_model_server $dest_dir/offline/Workshop\n"

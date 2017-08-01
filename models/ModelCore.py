@@ -1,0 +1,729 @@
+import sys
+sys.path.insert(0, "/search/odin/Nick/_python_build")
+import abc
+import time
+import shutil
+import logging as log
+from util import * 
+from config import confs
+
+from QueueReader import *
+import tensorflow as tf
+
+from tensorflow.python.ops import variable_scope
+from tensorflow.python import debug as tf_debug
+from tensorflow.python.framework import ops
+
+from tensorflow.python.saved_model import builder as saved_model_builder
+from tensorflow.python.saved_model import constants
+from tensorflow.python.saved_model import signature_constants 
+from tensorflow.python.saved_model import loader
+from tensorflow.python.saved_model import main_op
+from tensorflow.python.saved_model import signature_def_utils
+from tensorflow.python.saved_model import tag_constants
+from tensorflow.python.saved_model import utils
+from tensorflow.contrib.layers.python.layers.embedding_ops import embedding_lookup_unique
+
+from nick_tf import score_decoder 
+from nick_tf import helper
+from nick_tf import basic_decoder
+from nick_tf import decoder
+from nick_tf import beam_decoder
+from nick_tf import dynamic_attention_wrapper
+from nick_tf import hook 
+from nick_tf.cocob_optimizer import COCOB 
+
+
+graphlg = log.getLogger("graph")
+trainlg = log.getLogger("train")
+
+class ModelCore(object):
+	def __init__(self, name, job_type="single", task_id="0", dtype=tf.float32):
+		self.conf = confs[name]
+		self.model_kind = self.__class__.__name__
+		if self.conf.model_kind !=  self.model_kind:
+			print "Wrong model kind !, this model needs config of kind '%s', but a '%s' config is given." % (self.model_kind, self.conf.model_kind)
+			exit(0)
+
+		self.name = name
+		self.job_type = job_type
+		self.task_id = int(task_id)
+		self.dtype = dtype
+
+		# data stub 
+		self.sess = None
+		self.train_set = []
+		self.dev_set = []
+		self.dequeue_data_op = None 
+		self.summary_writer = None
+		self.summary_ops = None
+		self.prev_max_dev_loss = 10000000
+		self.latest_train_losses = []
+		self.learning_rate = None
+		self.learning_rate_decay_op = None
+
+		self.global_step = None 
+		self.trainable_params = []
+		self.global_params = []
+		self.optimizer_params = []
+		self.need_init = []
+		self.saver = None
+		self.builder = None
+
+		self.train_inputs_map = {}
+		self.train_outputs_map = {
+				"forward_only":{},
+				"update":{},
+				"debug_update":{}
+		}
+
+		self.infer_inputs_map = {}
+		self.infer_outputs_map = {}
+
+		
+
+		self.run_options = None #tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+		self.run_metadata = None #tf.RunMetadata()
+
+	@property
+	#def train_step(self):
+	#	if not self.sess:
+	#		print "FATAL: The model is never initialized in any session !!"  
+	#		exit(0)
+	#	return self.global_step.eval(self.sess)
+
+	@abc.abstractmethod 
+	def build(self, for_deploy, variants=""):
+		return
+
+	@abc.abstractmethod
+	def get_init_ops():
+		return
+
+	@abc.abstractmethod
+	def get_init_fn(self):
+		init_ops = self.get_init_ops()
+		def init_fn(scaffold, sess):
+			graphlg.info("Saver not used, created model with fresh parameters.")
+			graphlg.info("initialize new models")
+			for each in init_ops:
+				graphlg.info("initialize op: %s" % str(each))
+				sess.run(each)
+		return init_fn
+
+	@abc.abstractmethod
+	def get_restorer(self):
+		return
+	
+	@abc.abstractmethod
+	def preproc(self, records, use_seg=True, for_deploy=False): 
+		return 
+
+	@abc.abstractmethod
+	def export(self, conf_name, runtime_root="../runtime", deploy_dir="deployments", ckpt_steps=None, variants=""):
+		sess, global_steps, nodes = self.initialize_infer(gpu="0", variants=variants, ckpt_steps=ckpt_steps, runtime_root=runtime_root)
+
+		# global steps as version
+		export_dir = os.path.join(os.path.join(deploy_dir, conf_name), str(global_steps))
+
+		if os.path.exists(export_dir):
+			print("Removing duplicate: %s" % export_dir)
+			shutil.rmtree(export_dir)
+
+		inputs = {k:utils.build_tensor_info(v) for k, v in nodes["inputs"].items()}
+		outputs = {k:utils.build_tensor_info(v) for k, v in nodes["outputs"].items()}
+
+		signature_def = signature_def_utils.build_signature_def(inputs=inputs, outputs=outputs, 
+																method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)
+		
+		builder = saved_model_builder.SavedModelBuilder(export_dir)
+		builder.add_meta_graph_and_variables(sess,
+											[tag_constants.SERVING],
+											signature_def_map={
+													signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:signature_def
+												}
+											)
+		builder.save()
+		print('Exporting trained model to %s' % export_dir)
+		return
+
+	@abc.abstractmethod
+	def after_proc(self, out):
+		return {}
+
+
+	@abc.abstractmethod
+	def print_after_proc(self, after_proc):
+		outs = after_proc["outputs"]
+		for i, each in enumerate(outs):
+			for j, s in enumerate(each):
+				out_str = " ".join(s)
+				#print out_str, outs[0]["probs"][i][j]
+				print out_str, after_proc["probs"][i][j] 
+
+	def fetch_data(self, use_random=False, begin=0, size=128, dev=False, sess=None):
+		""" General Fetch data process
+		"""
+		if self.conf.use_data_queue:
+			if sess:
+				curr_sess = sess
+			elif self.sess == None:
+				print "FATAL: The model must be initialized first when data queue used !!"  
+				exit(0)
+			elif self.dequeue_data_op == None:
+				print "FATAL: 'use_data_queue' in conf is true but dequeue_data_op is None"
+				exit(0)
+			else:
+				curr_sess = self.sess
+			examples = curr_sess.run(self.dequeue_data_op)
+		else:
+			records = self.dev_set if dev else self.train_set
+			if use_random == True:
+				examples = random.sample(records, size)
+			else:
+				begin = begin % len(records)
+				examples = records[begin:begin+size]
+		return examples
+
+	def feed(self, dev=False, begin=0, size=0, sess):
+		examples = self.fetch_data(use_random=False, begin=0, size=size, dev=True, sess) 
+		input_feed = self.preproc(examples)
+		return input_feed
+
+	def build_all(self, for_deploy, variants="", device="/cpu:0"):
+		with tf.device(device):
+			with variable_scope.variable_scope(self.model_kind, dtype=dtype) as scope: 
+				graphlg.info("Building main graph...")	
+				loss, inputs, outputs = self.build(for_deploy, variants="")
+				fetch_nodes = {}
+				if not for_deploy:	
+					update = self.backprop(loss)	
+					graphlg.info("Merging summary ops...")	
+					summary_ops = tf.summary.merge_all()
+					fetch_nodes = {
+						"update":update,
+						"loss":loss,
+						"debug_outputs":outputs,
+						"summary": summary_ops
+					}
+				else:
+					fetch_nodes = {
+						"inputs":inputs,
+						"outputs":outputs
+					}
+				graphlg.info("Collecting trainables and building saver...")
+				self.trainable_params.extend(tf.trainable_variables())
+				self.saver = tf.train.Saver(max_to_keep=conf.max_to_keep)
+				graphlg.info("Graph done")
+				graphlg.info("")
+
+		# More log info about device placement and params memory
+		devices = {}
+		for each in tf.trainable_variables():
+			if each.device not in devices:
+				devices[each.device] = []
+			graphlg.info("%s, %s, %s" % (each.name, each.get_shape(), each.device))
+			devices[each.device].append(each)
+		mem = []
+		graphlg.info(" ========== Params placment ==========")
+		for d in devices:
+			tmp = 0.0
+			for each in devices[d]: 
+				#graphlg.info("%s, %s, %s" % (d, each.name, each.get_shape()))
+				shape = each.get_shape()
+				size = 1.0 
+				for dim in shape:
+					size *= int(dim)
+				tmp += size
+			mem.append("Device: %s, Param size: %s MB" % (d, tmp * self.dtype.size / 1024.0 / 1024.0))
+		graphlg.info(" ========== Device Params Mem ==========")
+		for each in mem:
+			graphlg.info(each)
+		return fetch_nodes
+
+	def backprop(self, loss):
+		# Backprop graph and optimizers
+		conf = self.conf
+		dtype = self.dtype
+		with variable_scope.variable_scope(self.model_kind, dtype=dtype) as scope: 
+			graphlg.info("Creating backpropagation graph and optimizers...")
+			self.learning_rate = tf.Variable(float(conf.learning_rate),
+									trainable=False, name="learning_rate")
+			self.learning_rate_decay_op = self.learning_rate.assign(
+						self.learning_rate * conf.learning_rate_decay_factor)
+			self.global_step = tf.Variable(0, trainable=False, name="global_step")
+			self.data_idx = tf.Variable(0, trainable=False, name="data_idx")
+			self.data_idx_inc_op = self.data_idx.assign(self.data_idx + conf.batch_size)
+
+			self.optimizers = {
+				"SGD":tf.train.GradientDescentOptimizer(self.learning_rate),
+				"Adadelta":tf.train.AdadeltaOptimizer(self.learning_rate),
+				"Adagrad":tf.train.AdagradOptimizer(self.learning_rate),
+				"AdagradDA":tf.train.AdagradDAOptimizer(self.learning_rate, self.global_step),
+				"Moment":tf.train.MomentumOptimizer(self.learning_rate, 0.9),
+				"Ftrl":tf.train.FtrlOptimizer(self.learning_rate),
+				"RMSProp":tf.train.RMSPropOptimizer(self.learning_rate),
+				"Adam":tf.train.AdamOptimizer(self.learning_rate),
+				"COCOB":COCOB()
+			}
+
+			self.opt = self.optimizers[conf.opt_name]
+			tmp = set(tf.global_variables()) 
+
+			if self.job_type == "worker": 
+				self.opt = tf.train.SyncReplicasOptimizer(self.opt, conf.replicas_to_aggregate, conf.total_num_replicas) 
+				grads_and_vars = self.opt.compute_gradients(loss=loss) 
+				gradients, variables = zip(*grads_and_vars)  
+			else:
+				gradients = tf.gradients(loss, tf.trainable_variables(), aggregation_method=2)
+				variables = tf.trainable_variables()
+
+			clipped_gradients, self.grad_norm = tf.clip_by_global_norm(gradients, conf.max_gradient_norm)
+			update = self.opt.apply_gradients(zip(clipped_gradients, variables), self.global_step)
+
+			self.optimizer_params.append(self.learning_rate)
+			self.optimizer_params.extend(list(set(tf.global_variables()) - tmp))
+			self.global_params.extend([self.global_step, self.data_idx])
+			tf.add_to_collection(tf.GraphKeys.GLOBAL_STEP, self.global_step)
+		return update
+
+	def preproc(self, records, use_seg=True, for_deploy=False, default_wgt=1.0):
+		# parsing
+		data = []
+		for each in records:
+			if for_deploy:
+				p = each.strip()
+				words, _ = tokenize_word(p) if use_seg else (p.split(), None)
+				p_list = words #re.split(" +", p.strip())
+				data.append([p_list, len(p_list) + 1, [], 1, 1.0])
+			else:
+				segs = re.split("\t", each.strip())
+				if len(segs) < 2:
+					continue
+				p, r = segs[0], segs[1]
+				p_list = re.split(" +", p)
+				r_list = re.split(" +", r)
+
+				down_wgts = segs[-1] if len(segs) > 2 else default_wgt 
+				if self.conf.reverse:
+					p_list, r_list = r_list, p_list
+				data.append([p_list, len(p_list) + 1, r_list, len(r_list) + 1, down_wgts])
+
+		# batching
+		conf = self.conf
+		batch_enc_inps, batch_dec_inps, batch_enc_lens, batch_dec_lens, batch_down_wgts = [], [], [], [], []
+		for encs, enc_len, decs, dec_len, down_wgts in data:
+			# Encoder inputs are padded, reversed and then padded to max.
+			enc_len = enc_len if enc_len < conf.input_max_len else conf.input_max_len
+			encs = encs[0:conf.input_max_len]
+			if conf.enc_reverse:
+				encs = list(reversed(encs + ["_PAD"] * (enc_len - len(encs))))
+			enc_inps = encs + ["_PAD"] * (conf.input_max_len - len(encs))
+
+			batch_enc_inps.append(enc_inps)
+			batch_enc_lens.append(np.int32(enc_len))
+			if not for_deploy:
+				# Decoder inputs with an extra "GO" symbol and "EOS_ID", then padded.
+				decs += ["_EOS"]
+				decs = decs[0:conf.output_max_len + 1]
+				# fit to the max_dec_len
+				if dec_len > conf.output_max_len + 1:
+					dec_len = conf.output_max_len + 1
+				# Merge dec inps and targets 
+				batch_dec_inps.append(["_GO"] + decs + ["_PAD"] * (conf.output_max_len + 1 - len(decs)))
+				batch_dec_lens.append(np.int32(dec_len))
+				batch_down_wgts.append(down_wgts)
+		self.curr_input_feed = feed_dict = {
+			"enc_inps:0": batch_enc_inps,
+			"enc_lens:0": batch_enc_lens,
+			"dec_inps:0": batch_dec_inps,
+			"dec_lens:0": batch_dec_lens,
+			"down_wgts:0": batch_down_wgts
+		}
+		for k, v in feed_dict.items():
+			if not v: 
+				del feed_dict[k]
+		return feed_dict
+
+	def getFetchNodes(self, forward_only, debug=False, for_deploy=False): 
+		if not for_deploy:
+			if forward_only:
+				output_map = self.train_outputs_map["forward_only"]
+			elif debug:
+				output_map = self.train_outputs_map["debug_update"]
+			else:
+				output_map = self.train_outputs_map["update"] 
+		else:
+			output_map = self.infer_outputs_map
+		return output_map
+
+	def step(self, input_feed, forward_only, debug=False, for_deploy=False, run_meta=False, sess=None):
+		if sess: 
+			curr_sess = sess
+		elif not self.sess:
+			print "FATAL: The model is never initialized in any session !!"  
+			exit(0)
+		else:
+			curr_sess = self.sess
+		if not for_deploy:
+			if forward_only:
+				output_map = self.train_outputs_map["forward_only"]
+			elif debug:
+				output_map = self.train_outputs_map["debug_update"]
+			else:
+				output_map = self.train_outputs_map["update"] 
+		else:
+			output_map = self.infer_outputs_map
+		
+		if run_meta: 
+			step_outs = curr_sess.run(output_map, input_feed,
+						options=self.run_options, run_metadata=self.run_metadata)
+			tf.contrib.tfprof.model_analyzer.print_model_analysis(
+						tf.get_default_graph(),run_meta=self.run_metadata,
+						tfprof_options=tf.contrib.tfprof.model_analyzer.PRINT_ALL_TIMING_MEMORY)
+		else:
+			step_outs = curr_sess.run(output_map, input_feed)
+
+		return step_outs
+
+	def join_param_server(self):
+		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
+		session_config = tf.ConfigProto(allow_soft_placement=True,
+									log_device_placement=False,
+									gpu_options=gpu_options,
+									intra_op_parallelism_threads=32)
+		server = tf.train.Server(self.conf.cluster, job_name=self.job_type,
+								task_index=self.task_id, config=session_config, protocol="grpc+verbs")
+		trainlg.info("ps join...")
+		server.join()
+
+	def initialize_infer(self, gpu="", variants="", ckpt_steps=None, runtime_root="../runtime_root"):
+		core_str = "cpu:0" if (gpu is None or gpu == "") else "/gpu:%d" % int(gpu)
+		self.ckpt_dir = os.path.join(runtime_root, self.name)
+		if not os.path.exists(self.ckpt_dir):
+			print ("\n No checkpoint dir found !!! exit")
+			exit(0)
+		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
+		session_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
+									gpu_options=gpu_options, intra_op_parallelism_threads=32)
+		fetch_nodes, _ = self.build_all(True, variants=variants, core_str)
+		self.sess = tf.Session(config=session_config)
+		#self.sess = tf.InteractiveSession(config=session_config)
+		#self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+
+		restorer = self.get_restorer()
+		ckpt = tf.train.get_checkpoint_state(self.ckpt_dir, latest_filename=None)
+		filename = None
+		if ckpt_steps:
+			for each in ckpt.all_model_checkpoint_paths:
+				seged = re.split("\-", each)	
+				if str(ckpt_steps) == seged[-1]:
+					filename = each
+					break
+		else:
+			filename = ckpt.model_checkpoint_path
+			ckpt_steps = re.split("\-", filename)[-1]
+			print ("use latest %s as inference model" % ckpt_steps)
+		if filename == None:
+			print ("\n No checkpoint step %s found in %s" % (str(ckpt_steps), self.ckpt_dir))
+			exit(0)
+		restorer.restore(save_path=filename, sess=self.sess)
+		return self.sess, ckpt_steps, fetch_nodes 
+
+	def init_monitored_train_sess(self, runtime_root, gpu=""):  
+		self.ckpt_dir = os.path.join(runtime_root, self.name)
+		if not os.path.exists(self.ckpt_dir):
+			os.mkdir(self.ckpt_dir)
+
+		# create graph logger
+		fh = log.FileHandler(os.path.join(self.ckpt_dir, "graph_%s_%d.log" % (self.job_type, self.task_id)))
+		fh.setFormatter(log.Formatter('[%(asctime)s][%(name)s][%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S"))
+		log.getLogger("graph").addHandler(fh)
+		log.getLogger("graph").setLevel(log.DEBUG) 
+
+		# create training logger
+		fh = log.FileHandler(os.path.join(self.ckpt_dir, "train_%s_%d.log" % (self.job_type, self.task_id)))
+		fh.setFormatter(log.Formatter('[%(asctime)s][%(name)s][%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S"))
+		log.getLogger("train").addHandler(fh)
+		log.getLogger("train").setLevel(log.DEBUG)
+		
+		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
+		sess_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
+									gpu_options=gpu_options, intra_op_parallelism_threads=32)
+
+		# handle device placement for both single and distributed method
+		core_str = "cpu:0" if (gpu is None or gpu == "") else "gpu:%d" % int(gpu)
+		if self.job_type == "worker":
+			def _load_fn(unused_op):
+				return 1
+			ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(3,_load_fn)
+			device = tf.train.replica_device_setter(cluster=self.conf.cluster,
+							worker_device='job:worker/task:%d/%s' % (self.task_id, core_str),
+							ps_device='job:ps/task:%d/cpu:0' % self.task_id,
+							ps_strategy=ps_strategy)
+			queue_device = "job:worker/task:0/cpu:0"
+		else:
+			device = "/" + core_str 
+			queue_device = "/cpu:0" 
+
+		# Prepare data
+		# create a data queue or just read all to memory
+		self.train_set = []
+		self.dev_set = []
+		path = os.path.join(self.conf.data_dir, "train.data")
+		if self.conf.use_data_queue:
+			with tf.device(queue_device):
+				self.qr = QueueReader(filename_list=[path])
+				self.dequeue_data_op = self.qr.batched(batch_size=self.conf.batch_size,
+													min_after_dequeue=self.conf.replicas_to_aggregate)
+		else:
+			count = 0
+			path = os.path.join(self.conf.data_dir, "train.data")
+			with codecs.open(path) as f:
+				for line in f:
+					self.train_set.append(line.strip())
+					count += 1
+					if count % 100000 == 0:
+						trainlg.info(" Reading data %d..." % count)
+				trainlg.info(" Reading data %d..." % count)
+			with codecs.open(os.path.join(self.conf.data_dir, "valid.data")) as f:
+				self.dev_set = [line.strip() for line in f]	 
+
+
+		# build all graph on device
+		fetch_nodes, summary_ops = self.build_all(False, variants="", device=device)
+		debug_fetches = fetch_nodes["debug_outputs"]
+		dev_fetches = fetch_nodes["forward_only"]
+
+		# Create hooks and master server descriptor	
+		saver_hook = hook.NickCheckpointSaverHook(checkpoint_dir=self.ckpt_dir,
+												  checkpoint_steps=40,
+												  saver=self.saver,
+												  feedfn=self.feed,
+												  dev_fetches=dev_fetches,
+												  firein_steps=10000)
+		sum_hook = hook.NickSummaryHook(summary_ops, debug_outputs, self.ckpt_dir, 20, 40)
+		if self.job_type == "worker":
+			ready_for_local_init_op = self.opt.ready_for_local_init_op
+			local_op = self.opt.chief_init_op if self.task_id==0 else self.opt.local_step_init_op
+			sync_replicas_hook = self.opt.make_session_run_hook((self.task_id==0))
+			master = tf.train.Server(self.conf.cluster, job_name=self.job_type,
+									 task_index=self.task_id, config=sess_config,
+									 protocol="grpc+verbs").target
+			hooks = [sync_replicas_hook, saver_hook, sum_hook]
+		else:
+			ready_for_local_init_op = None
+			local_op = None
+			master = ""
+			hooks = [saver_hook, sum_hook] 
+
+		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=init_fn,
+									 ready_op=None, ready_for_local_init_op=ready_for_local_init_op,
+									 local_init_op=local_op, summary_op=None,
+									 saver=self.get_restorer())
+		
+		self.sess = tf.train.MonitoredTrainingSession(master=master, is_chief=(self.task_id==0),
+													  checkpoint_dir=self.ckpt_dir,
+													  scaffold=scaffold,
+													  hooks=hooks,
+													  config=sess_config,
+													  #save_checkpoint_secs=None,
+													  #save_summaries_steps=None,
+													  #save_summaries_secs=None,
+													  stop_grace_period_secs=120)
+													  #log_step_count_steps=20) 
+		
+		if self.conf.use_data_queue and self.task_id == 0:
+			graphlg.info("chief worker start data queue runners...")
+			self.qr.start(session=self.sess)
+
+		#if self.task_id == 0:
+		#	trainlg.info("preparing for summaries...")
+		#	sub_dir_train = "summary/%s/%s" % (self.conf.model_kind, self.name) 
+		#	self.summary_writer = tf.summary.FileWriter(os.path.join(runtime_root, sub_dir_train), self.sess.graph, flush_secs=0)
+
+		#if self.job_type == "worker" and self.task_id == 0:
+		#	#graphlg.info("chief worker start parameter queue runners...")
+		#	#sv.start_queue_runners(self.sess, [chief_queue_runner])
+		#	graphlg.info("chief worker insert init tokens...")
+		#	self.sess.run(init_token_op)
+		#	graphlg.info ("%s:%d Session created" % (self.job_type, self.task_id))
+		#	graphlg.info ("Initialization done")
+		return self.sess
+
+	def adjust_lr_rate(self, global_step, step_loss):
+		self.latest_train_losses.append(step_loss)
+		if step_loss < self.latest_train_losses[0]:
+			self.latest_train_losses = self.latest_train_losses[-1:] 
+		if global_step > self.conf.lr_keep_steps and len(self.latest_train_losses) == self.conf.lr_check_steps:
+			self.sess.run(self.learning_rate_decay_op)
+			self.latest_train_losses = []
+
+	#def summarize_train(self, input_feed, global_step):
+	#	summary = self.sess.run(self.summary_ops, input_feed)
+	#	self.summary_writer.add_summary(summary, global_step)
+	#	self.summary_writer.flush()
+
+	def get_visual_tensor(self):
+		return None, None
+
+	def checkpoint(self, dev_num, steps):
+		if not self.sess:
+			print "FATAL: The model is never initialized in any session !!"  
+			exit(0)
+		dev_loss = 0.0
+		dev_time = 0.0
+		count = 0
+		begin = 0
+		while begin < dev_num: 
+			examples = self.fetch_data(use_random=False, begin=0, size=self.conf.batch_size, dev=True) 
+			t0 = time.time()
+			input_feed = self.preproc(examples)
+			step_out = self.step(input_feed=input_feed, forward_only=True)
+			dev_time = round(time.time() - t0, 2)
+			dev_loss += step_out["loss"] * 1.0 
+			count += 1
+			begin += self.conf.batch_size
+		dev_loss /= count 
+		dev_time /= count
+		summary = tf.Summary()
+		summary.value.add(tag="dev_loss", simple_value=dev_loss)
+		self.summary_writer.add_summary(summary, steps)
+		self.summary_writer.flush()
+
+		if steps > 1000 and dev_loss < self.prev_max_dev_loss and self.task_id == 0:
+			trainlg.info("Need Saving....")
+			self.prev_max_dev_loss = round(dev_loss, 4)
+			self.saver.save(self.sess, os.path.join(self.ckpt_dir, "model.ckpt"), global_step=steps)
+		return dev_loss, dev_time
+
+	def visualize(self, gpu=0, records=[]): 
+		visual_vec = self.project()
+		if visual_vec == None:
+			return None, None
+		embedding_var = tf.Variable(0.0, [len(records), visual_vec.get_shape()[1]])
+
+		self.initialize_infer("../runtime/", gpu="0", variants="")
+
+		emb_list = [] 
+		out_list = []
+		for start in range(0, len(records), self.conf.batch_size):
+			batch = records[start:start + self.conf.batch_size]
+			input_feed = self.preproc(examples, use_seg=True, for_deploy=True)
+			outs = session.run([tensor, self.outputs], feed_dict=input_feed)
+			emb_list.append(outs[0])
+			out_list.append(outs[1])
+
+		embs = np.concatenate(emb_list, axis=0)
+
+		# may not be used
+		outs = np.concatenate(out_list, axis=0)
+
+		model.sess.run(embedding_var.assign(tf.squeeze(embs)))
+
+		saver = tf.train.Saver([embedding_var])
+		saver.save(sess, os.path.join(FLAGS.train_root,"%s.embs" % proj_name))
+
+		meta_path = os.path.join(FLAGS.train_root,"%s.tsv" % proj_name)
+		config = projector.ProjectorConfig()
+		embedding = config.embeddings.add()
+		embedding.tensor_name = embedding_var.name 
+		embedding.metadata_path = meta_path 
+		projector.visualize_embeddings(summary_writer, config)
+
+		with codecs.open(meta_path, "w") as f:
+			f.write("Query\tFrequency\n")
+			for i, each in enumerate(outs):
+				each = list(each)
+				if "_EOS" in each:
+					each = each[0:each.index("_EOS")]
+				f.write("%s --> %s\t%d\n" % (records[i], "".join(each), i))
+			#for i, line in enumerate(records):
+			#	f.write("%s\t%d\n" % (line, i))
+		return
+		
+	def dummy_train(self, gpu=0, create_new=True):
+		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
+		session_config = tf.ConfigProto(allow_soft_placement=True,
+										log_device_placement=False,
+										gpu_options=gpu_options,
+										intra_op_parallelism_threads=32)
+		print "Building..."
+		with tf.device("/gpu:%d" % gpu):
+			self.build(for_deploy=False, variants="")
+
+		init_fn = self.get_init_fn()
+		restorer = self.get_restorer()
+
+		print "Creating Data queue..."
+		path = os.path.join(confs[self.name].data_dir, "train.data")
+		qr = QueueReader(filename_list=[path])
+		deq_batch_records = qr.batched(batch_size=confs[self.name].batch_size, min_after_dequeue=3)
+		
+		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=init_fn, ready_op=None, 
+									ready_for_local_init_op=None, local_init_op=None, summary_op=None, saver=restorer)
+		if create_new:
+			ckpt_dir = "../runtime/null" 
+		else:
+			ckpt_dir = os.path.join("../runtime/", self.name)
+
+		self.sess = tf.train.MonitoredTrainingSession(master="", is_chief=True, checkpoint_dir=ckpt_dir,
+									scaffold=scaffold, hooks=None, save_checkpoint_secs=None, save_summaries_steps=None,
+									save_summaries_secs=None, config=None, stop_grace_period_secs=120, log_step_count_steps=20) 
+		#sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+		#sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+
+		qr.start(session=self.sess)
+
+		print "Dequeue one batch..."
+		batch_records = self.sess.run(deq_batch_records)
+		N = 10 
+		while True:
+			print "Step only on one batch..."
+			feed_dict = self.preproc(batch_records, use_seg=False, for_deploy=False)
+			t0 = time.time()
+			out = self.step(feed_dict, False, True, False)
+			t = time.time() - t0
+			for i in range(N):
+				for key in feed_dict:
+					print "%s_%d:" % (key, i), " ".join(feed_dict[key][i])
+				print ">>> outputs_%d:" % i, " ".join(out["outputs"][i])
+			print "TIME: %.4f, LOSS: %.10f" % (t, out["loss"])
+			print ""
+
+	def test(self, gpu=0, use_seg=True):
+		self.initialize_infer(gpu="0", runtime_root="../runtime/")
+		while True:
+			query = raw_input(">>")
+			batch_records = [query]
+			feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True)
+			out_dict = self.step(feed_dict, False, False, True)
+			out = self.after_proc(out_dict) 
+			self.print_after_proc(out)
+
+	def test_logprob(self, gpu=0, use_seg=True):
+		self.initialize_infer(gpu="0", variants="score", runtime_root="../runtime/")
+		while True:
+			post = raw_input("Post >>")
+			resp = raw_input("Response >>")
+			words, _ = tokenize_word(resp) if use_seg else p.split()
+			resp_str = " ".join(words)
+			print "Score resp: %s" % resp_str
+			batch_records = ["%s\t%s" % (post, resp_str)]
+			feed_dict = self.preproc(batch_records, use_seg=True, for_deploy=False)
+			out_dict = self.step(feed_dict, False, False, True)
+			prob = out_dict["logprobs"]
+			print prob
+
+	def __call__(self, flag="train", use_seg=True, gpu=0):
+		if flag == "train":
+			self.dummy_train(gpu)
+		elif flag == "trainold":
+			self.dummy_train(gpu, create_new=False)
+		elif flag == "test":
+			self.test(gpu, use_seg)
+		elif flag == "test_score":
+			self.test_logprob(gpu, use_seg)
+		else:
+			print "Unknown flag: %s" % flag
+			exit(0)

@@ -1,0 +1,25 @@
+#!/usr/bin/expect -f
+set timeout 1000000 
+set key [lindex $argv 0]
+set node [lindex $argv 1]
+set password [lindex $argv 2]
+
+spawn scp $key $node:/root/.ssh/temp_pub_key 
+expect {
+    "yes/no" { 
+        send "yes\n" 
+        expect { "*password*" { send "$password\n" } }
+    }
+    "*password*" { send "$password\n" }
+    "]#" {send "ls\n"}
+}
+
+spawn ssh $node
+expect { 
+    "password*" { send "$password\n"}
+    "]#" {send "ls\n"}
+}
+expect "]#"
+send "cat /root/.ssh/temp_pub_key >> /root/.ssh/authorized_keys\n"
+expect "]#"
+send "chmod 600 ~/.ssh/authorized_keys\n"

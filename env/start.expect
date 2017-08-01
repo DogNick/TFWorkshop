@@ -1,0 +1,20 @@
+#!/usr/bin/expect
+set timeout 1000000
+set node [lindex $argv 0]
+set password [lindex $argv 1]
+set server_dir "/search/odin/offline/Workshop/servers"
+
+spawn ssh $node
+expect {
+    "yes/no" { 
+        send "yes\n" 
+        expect { "*password*" { send "$password\n" } }
+    }
+    "*password*" { send "$password\n" }
+    "]#" { send "ls\n" } 
+}
+expect "]#"
+send "cd $server_dir\n"
+expect "]#"
+send "./chat_start.sh\n\n"
+expect "]#"
