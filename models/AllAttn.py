@@ -475,7 +475,6 @@ class AllAttn(ModelCore):
 
 			#self.preds = tf.Print(self.preds, [tf.shape(self.preds)], message="preds")
 			#self.logits = tf.Print(self.logits, [tf.shape(self.logits)], message="logits")
-
 		if not for_deploy:  
 			self.istarget = tf.to_float(tf.not_equal(self.dec_tar_inps, 0))
 			self.acc = tf.reduce_sum(tf.to_float(tf.equal(tf.to_int64(self.preds), self.dec_tar_inps)) * self.istarget) / (tf.reduce_sum(self.istarget))
@@ -573,8 +572,8 @@ class AllAttn(ModelCore):
 				batch_dec_inps.append(decs + ["_PAD"] * (conf.output_max_len + 1 - len(decs)))
 
 		feed_dict = {
-			"enc_inps:0": batch_enc_inps,
-			"dec_inps:0": batch_dec_inps,
+			"AllAttn/enc_inps:0": batch_enc_inps,
+			"AllAttn/dec_inps:0": batch_dec_inps,
 		}
 		for k, v in feed_dict.items():
 			if not v: 
@@ -582,17 +581,13 @@ class AllAttn(ModelCore):
 		return feed_dict
 
 	def after_proc(self, out):
-		after_proc_out = {
-			"outputs":out["outputs"],
-		}
-		return after_proc_out
+		return out 
 
 	def print_after_proc(self, after_proc):
-		for each in after_proc["outputs"]:
+		for each in after_proc:
 			out_str = "".join(each)
 			print out_str[0:out_str.find("_EOS")]
 	
-
 if __name__ == "__main__":
 	name = "allattn"
 	model = AllAttn(name)

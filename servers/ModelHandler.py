@@ -92,7 +92,6 @@ class ModelHandler(tornado.web.RequestHandler):
 		# make request 
 		request = predict_pb2.PredictRequest()
 		request.model_spec.name = graph.name 
-		print(feed_data)
 		for key, value in feed_data.items():
 			v = np.array(value) 
 			value_tensor = tensor_util.make_tensor_proto(value, shape=v.shape)
@@ -102,7 +101,7 @@ class ModelHandler(tornado.web.RequestHandler):
 
 		# query the model 
 		#result = stub.Predict(request, 4.0)
-		result = yield fwrap(stub.Predict.future(request, 2.0))
+		result = yield fwrap(stub.Predict.future(request, 3.0))
 		out = {}
 		for key, value in result.outputs.items():
 			out[key] = tensor_util.MakeNdarray(value) 

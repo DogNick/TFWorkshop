@@ -116,12 +116,8 @@ class ModelCore(object):
 		return
 	
 	@abc.abstractmethod
-	def preproc(self, records, use_seg=True, for_deploy=False): 
-		return 
-
-	@abc.abstractmethod
 	def export(self, conf_name, runtime_root="../runtime", deploy_dir="deployments", ckpt_steps=None, variants=""):
-		sess, global_steps, nodes = self.initialize_infer(gpu="0", variants=variants, ckpt_steps=ckpt_steps, runtime_root=runtime_root)
+		sess, nodes, global_steps = self.init_infer(gpu="0", variants=variants, ckpt_steps=ckpt_steps, runtime_root=runtime_root)
 
 		# global steps as version
 		export_dir = os.path.join(os.path.join(deploy_dir, conf_name), str(global_steps))
@@ -185,35 +181,28 @@ class ModelCore(object):
 				examples = records[begin:begin+size]
 		return examples
 
-	def feed(self, dev=False, begin=0, size=0, sess):
-		examples = self.fetch_data(use_random=False, begin=0, size=size, dev=True, sess) 
-		input_feed = self.preproc(examples)
-		return input_feed
-
 	def build_all(self, for_deploy, variants="", device="/cpu:0"):
 		with tf.device(device):
-			with variable_scope.variable_scope(self.model_kind, dtype=dtype) as scope: 
+			with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
 				graphlg.info("Building main graph...")	
 				loss, inputs, outputs = self.build(for_deploy, variants="")
-				fetch_nodes = {}
+				graphlg.info("Collecting trainable params...")
+				self.trainable_params.extend(tf.trainable_variables())
 				if not for_deploy:	
+					graphlg.info("Creating backpropagation graph and optimizers...")
 					update = self.backprop(loss)	
-					graphlg.info("Merging summary ops...")	
-					summary_ops = tf.summary.merge_all()
-					fetch_nodes = {
+					self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
+					graph_nodes = {
 						"update":update,
 						"loss":loss,
 						"debug_outputs":outputs,
-						"summary": summary_ops
+						"summary": tf.summary.merge_all()
 					}
 				else:
-					fetch_nodes = {
+					graph_nodes = {
 						"inputs":inputs,
 						"outputs":outputs
 					}
-				graphlg.info("Collecting trainables and building saver...")
-				self.trainable_params.extend(tf.trainable_variables())
-				self.saver = tf.train.Saver(max_to_keep=conf.max_to_keep)
 				graphlg.info("Graph done")
 				graphlg.info("")
 
@@ -239,14 +228,13 @@ class ModelCore(object):
 		graphlg.info(" ========== Device Params Mem ==========")
 		for each in mem:
 			graphlg.info(each)
-		return fetch_nodes
+		return graph_nodes
 
 	def backprop(self, loss):
 		# Backprop graph and optimizers
 		conf = self.conf
 		dtype = self.dtype
 		with variable_scope.variable_scope(self.model_kind, dtype=dtype) as scope: 
-			graphlg.info("Creating backpropagation graph and optimizers...")
 			self.learning_rate = tf.Variable(float(conf.learning_rate),
 									trainable=False, name="learning_rate")
 			self.learning_rate_decay_op = self.learning_rate.assign(
@@ -281,6 +269,7 @@ class ModelCore(object):
 			clipped_gradients, self.grad_norm = tf.clip_by_global_norm(gradients, conf.max_gradient_norm)
 			update = self.opt.apply_gradients(zip(clipped_gradients, variables), self.global_step)
 
+			graphlg.info("Collecting optimizer params and global params...")
 			self.optimizer_params.append(self.learning_rate)
 			self.optimizer_params.extend(list(set(tf.global_variables()) - tmp))
 			self.global_params.extend([self.global_step, self.data_idx])
@@ -334,11 +323,11 @@ class ModelCore(object):
 				batch_dec_lens.append(np.int32(dec_len))
 				batch_down_wgts.append(down_wgts)
 		self.curr_input_feed = feed_dict = {
-			"enc_inps:0": batch_enc_inps,
-			"enc_lens:0": batch_enc_lens,
-			"dec_inps:0": batch_dec_inps,
-			"dec_lens:0": batch_dec_lens,
-			"down_wgts:0": batch_down_wgts
+			"%s/enc_inps:0" % self.model_kind: batch_enc_inps,
+			"%s/enc_lens:0" % self.model_kind: batch_enc_lens,
+			"%s/dec_inps:0" % self.model_kind: batch_dec_inps,
+			"%s/dec_lens:0" % self.model_kind: batch_dec_lens,
+			"%s/down_wgts:0" % self.model_kind: batch_down_wgts
 		}
 		for k, v in feed_dict.items():
 			if not v: 
@@ -397,7 +386,7 @@ class ModelCore(object):
 		trainlg.info("ps join...")
 		server.join()
 
-	def initialize_infer(self, gpu="", variants="", ckpt_steps=None, runtime_root="../runtime_root"):
+	def init_infer(self, gpu="", variants="", ckpt_steps=None, runtime_root="../runtime_root"):
 		core_str = "cpu:0" if (gpu is None or gpu == "") else "/gpu:%d" % int(gpu)
 		self.ckpt_dir = os.path.join(runtime_root, self.name)
 		if not os.path.exists(self.ckpt_dir):
@@ -406,7 +395,7 @@ class ModelCore(object):
 		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
 		session_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
 									gpu_options=gpu_options, intra_op_parallelism_threads=32)
-		fetch_nodes, _ = self.build_all(True, variants=variants, core_str)
+		graph_nodes = self.build_all(for_deploy=True, variants=variants, device=core_str)
 		self.sess = tf.Session(config=session_config)
 		#self.sess = tf.InteractiveSession(config=session_config)
 		#self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
@@ -428,9 +417,9 @@ class ModelCore(object):
 			print ("\n No checkpoint step %s found in %s" % (str(ckpt_steps), self.ckpt_dir))
 			exit(0)
 		restorer.restore(save_path=filename, sess=self.sess)
-		return self.sess, ckpt_steps, fetch_nodes 
+		return self.sess, graph_nodes, ckpt_steps
 
-	def init_monitored_train_sess(self, runtime_root, gpu=""):  
+	def init_monitored_train(self, runtime_root, gpu=""):  
 		self.ckpt_dir = os.path.join(runtime_root, self.name)
 		if not os.path.exists(self.ckpt_dir):
 			os.mkdir(self.ckpt_dir)
@@ -489,20 +478,17 @@ class ModelCore(object):
 			with codecs.open(os.path.join(self.conf.data_dir, "valid.data")) as f:
 				self.dev_set = [line.strip() for line in f]	 
 
-
 		# build all graph on device
-		fetch_nodes, summary_ops = self.build_all(False, variants="", device=device)
-		debug_fetches = fetch_nodes["debug_outputs"]
-		dev_fetches = fetch_nodes["forward_only"]
+		graph_nodes = self.build_all(for_deploy=False, variants="", device=device)
 
 		# Create hooks and master server descriptor	
-		saver_hook = hook.NickCheckpointSaverHook(checkpoint_dir=self.ckpt_dir,
-												  checkpoint_steps=40,
+		saver_hook = hook.NickCheckpointSaverHook(checkpoint_dir=self.ckpt_dir, checkpoint_steps=200,
 												  saver=self.saver,
-												  feedfn=self.feed,
-												  dev_fetches=dev_fetches,
+												  fetch_data_fn=self.fetch_data,
+												  preproc_fn=self.preproc,
+												  dev_fetches={"loss":graph_nodes["loss"]},
 												  firein_steps=10000)
-		sum_hook = hook.NickSummaryHook(summary_ops, debug_outputs, self.ckpt_dir, 20, 40)
+		sum_hook = hook.NickSummaryHook(graph_nodes["summary"], graph_nodes["debug_outputs"], self.ckpt_dir, 20, 40)
 		if self.job_type == "worker":
 			ready_for_local_init_op = self.opt.ready_for_local_init_op
 			local_op = self.opt.chief_init_op if self.task_id==0 else self.opt.local_step_init_op
@@ -517,7 +503,7 @@ class ModelCore(object):
 			master = ""
 			hooks = [saver_hook, sum_hook] 
 
-		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=init_fn,
+		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.get_init_fn,
 									 ready_op=None, ready_for_local_init_op=ready_for_local_init_op,
 									 local_init_op=local_op, summary_op=None,
 									 saver=self.get_restorer())
@@ -549,7 +535,7 @@ class ModelCore(object):
 		#	self.sess.run(init_token_op)
 		#	graphlg.info ("%s:%d Session created" % (self.job_type, self.task_id))
 		#	graphlg.info ("Initialization done")
-		return self.sess
+		return self.sess, graph_nodes
 
 	def adjust_lr_rate(self, global_step, step_loss):
 		self.latest_train_losses.append(step_loss)
@@ -603,7 +589,7 @@ class ModelCore(object):
 			return None, None
 		embedding_var = tf.Variable(0.0, [len(records), visual_vec.get_shape()[1]])
 
-		self.initialize_infer("../runtime/", gpu="0", variants="")
+		self.initi_infer_sess("../runtime/", gpu="0", variants="")
 
 		emb_list = [] 
 		out_list = []
@@ -692,17 +678,18 @@ class ModelCore(object):
 			print ""
 
 	def test(self, gpu=0, use_seg=True):
-		self.initialize_infer(gpu="0", runtime_root="../runtime/")
+		sess, graph_nodes, global_steps = self.init_infer(gpu="0", runtime_root="../runtime/")
 		while True:
 			query = raw_input(">>")
 			batch_records = [query]
 			feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True)
-			out_dict = self.step(feed_dict, False, False, True)
+			#out_dict = self.step(feed_dict, False, False, True)
+			out_dict = sess.run(graph_nodes["outputs"], feed_dict) 
 			out = self.after_proc(out_dict) 
 			self.print_after_proc(out)
 
 	def test_logprob(self, gpu=0, use_seg=True):
-		self.initialize_infer(gpu="0", variants="score", runtime_root="../runtime/")
+		sess, graph_nodes = self.init_infer(gpu="0", variants="score", runtime_root="../runtime/")
 		while True:
 			post = raw_input("Post >>")
 			resp = raw_input("Response >>")
@@ -711,7 +698,8 @@ class ModelCore(object):
 			print "Score resp: %s" % resp_str
 			batch_records = ["%s\t%s" % (post, resp_str)]
 			feed_dict = self.preproc(batch_records, use_seg=True, for_deploy=False)
-			out_dict = self.step(feed_dict, False, False, True)
+			#out_dict = self.step(feed_dict, False, False, True)
+			out_dict = sess.run(graph_nodes["outputs"], feed_dict)
 			prob = out_dict["logprobs"]
 			print prob
 

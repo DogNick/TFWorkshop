@@ -378,7 +378,6 @@ class VAERNN(ModelCore):
 				#self.others = [alignments, beam_probs]
 				#self.outputs = self.out_table.lookup(tf.cast(symbol_ids, tf.int64))
 
-
 	def get_init_ops(self):
 		init_ops = []
 		if self.conf.embedding_init:
@@ -400,9 +399,7 @@ class VAERNN(ModelCore):
 		return init_ops
 
 	def get_restorer(self):
-
 		var_list = self.global_params + self.trainable_params + self.optimizer_params + tf.get_default_graph().get_collection("saveable_objects")
-
 		## Just for the FUCKING naming compatibility to tensorflow 1.1
 		var_map = {}
 		for each in var_list:

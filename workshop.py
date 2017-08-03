@@ -31,7 +31,6 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 from models import confs
 from models import SERVER_SCHEDULES 
 #from models.DynAttnSeq2Seq import *
-from models import create_runtime_model 
 from models import create 
 
 EOS_ID = 2
@@ -109,7 +108,7 @@ def main(_):
 			spc = FLAGS.steps_per_checkpoint
 
 			# Build graph, initialize graph and creat supervisor 
-			model.init_monitored_train_sess(FLAGS.train_root, gpu)
+			sess, graph_nodes = model.init_monitored_train(FLAGS.train_root, gpu)
 			data_time, step_time, loss = 0.0, 0.0, 0.0
 			trainlg.info("Main loop begin..")
 			offset = 0 
@@ -123,7 +122,8 @@ def main(_):
 				if iters % spp == 0:
 					trainlg.info("Data preprocess time %.5f" % data_time)
 					data_time = 0.0
-				step_out = model.step(debug=debug, input_feed=input_feed, forward_only=False)
+				#step_out = model.step(debug=debug, input_feed=input_feed, forward_only=False)
+				step_out = sess.run({"loss":graph_nodes["loss"], "update":graph_nodes["update"]}, input_feed)
 				offset = (offset + model.conf.batch_size) % len(model.train_set) if not model.conf.use_data_queue else 0
 				iters += 1
 
