@@ -46,14 +46,16 @@ tf.app.flags.DEFINE_string("gpu", None, "specify the gpu to use")
 tf.app.flags.DEFINE_integer("steps_per_print", 10, "How many training steps to do per print")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 400, "How many training steps to do per checkpoint.")
 
-# Distributed 
+
 tf.app.flags.DEFINE_string("job_type", "", "ps or worker")
 tf.app.flags.DEFINE_integer("task_id", 0, "task id")
 tf.app.flags.DEFINE_boolean("export", False, "to export the conf_name model")
+tf.app.flags.DEFINE_string("service", None, "to export service")
 tf.app.flags.DEFINE_string("visualize_file", None, "datafile to visualize")
 tf.app.flags.DEFINE_string("visualize_name", "Visualize", "name")
-tf.app.flags.DEFINE_string("service", None, "to export service")
 tf.app.flags.DEFINE_integer("schedule", None, "to export all models used in schedule")
+
+
 FLAGS = tf.app.flags.FLAGS
 
 def main(_):
@@ -122,40 +124,9 @@ def main(_):
 				if iters % spp == 0:
 					trainlg.info("Data preprocess time %.5f" % data_time)
 					data_time = 0.0
-				#step_out = model.step(debug=debug, input_feed=input_feed, forward_only=False)
 				step_out = sess.run({"loss":graph_nodes["loss"], "update":graph_nodes["update"]}, input_feed)
 				offset = (offset + model.conf.batch_size) % len(model.train_set) if not model.conf.use_data_queue else 0
 				iters += 1
-
-				###
-				## One training step
-				##global_step = model.train_step
-				#global_step = model.sess.run([model.global_step], feed_dict=input_feed)[0]
-				##global_step = model.global_step.eval(model.sess)
-				#debug = True if task_id == 0 and global_step % spp == 0 else False 
-				#step_out = model.step(debug=debug, input_feed=input_feed, forward_only=False)
-				#step_time += (time.time() - start_time) / spp
-				#loss += step_out["loss"] / spp
-		
-				## Adjust learning rate if needed
-				#model.adjust_lr_rate(global_step, step_out["loss"])
-
-				## Summarize training and print debug info if needed
-				#if global_step % spp == 0:
-				#	if task_id == 0: 
-				#		model.summarize_train(input_feed, global_step)
-				#	ppx = math.exp(loss) if loss < 300 else float('inf')
-				#	if debug:
-				#		model.print_debug_info(input_feed, step_out["outputs"])
-				#	trainlg.info("[TRAIN] Global %d, Data-time %.5f, Step-time %.2f, PPX %.2f" % (global_step, data_time, step_time, ppx))
-				#	data_time, step_time, loss = 0.0, 0.0, 0.0
-				## Eval and make checkpoint
-				#if global_step % spc == 0 and task_id == 0:
-				#	# Runing on dev set
-				#	dev_loss, dev_time = model.checkpoint(dev_num=1000, steps=global_step) 
-				#	dev_ppx = math.exp(dev_loss) if dev_loss < 300 else float('inf')
-				#	trainlg.info("[Dev]Step-time %.2f, DEV_LOSS %.5f, DEV_PPX %.2f" % (dev_time, dev_loss, dev_ppx))
-				#offset = (offset + model.conf.batch_size) % len(model.train_set) if not model.conf.use_data_queue else 0
 		elif model.conf.cluster and job_type == "ps":
 			model.join_param_server()
 		else:

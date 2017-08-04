@@ -491,12 +491,12 @@ class AllAttn(ModelCore):
 			tf.summary.scalar('mean_loss', self.mean_loss)
 			tf.summary.scalar('acc', self.acc)
 			outputs = self.pred_strs
-			return self.mean_loss, {}, outputs  
+			return self.mean_loss, {}, {"out_strs":outputs} 
 		else:
 			self.pred_strs = self.out_table.lookup(tf.cast(self.preds, tf.int64))
 			inputs = {"enc_inps":self.enc_str_inps}
 			outputs = self.pred_strs
-			return None, inputs, outputs  
+			return None, inputs, {"out_strs":outputs} 
 
 	def get_init_ops(self):
 		init_ops = []
@@ -581,7 +581,7 @@ class AllAttn(ModelCore):
 		return feed_dict
 
 	def after_proc(self, out):
-		return out 
+		return out["out_strs"] 
 
 	def print_after_proc(self, after_proc):
 		for each in after_proc:

@@ -51,7 +51,12 @@ SERVER_SCHEDULES = {
 		{
             "rnncls-bi-judge_poem":{"tf_server":"0.0.0.0:10031","deploy_gpu":1},
         }
-    ]
+    ],
+	"intent":[
+		{
+			"intent_1":{"tf_server":"0.0.0.0:10032","deploy_gpu":0},
+		}
+	]
 }
 
 DESC = { 

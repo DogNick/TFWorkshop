@@ -30,9 +30,9 @@ from nick_tf import basic_decoder
 from nick_tf import decoder
 from nick_tf import beam_decoder
 from nick_tf import dynamic_attention_wrapper
-from nick_tf import hook 
 from nick_tf.cocob_optimizer import COCOB 
 
+import hook 
 
 graphlg = log.getLogger("graph")
 trainlg = log.getLogger("train")
@@ -55,10 +55,9 @@ class ModelCore(object):
 		self.train_set = []
 		self.dev_set = []
 		self.dequeue_data_op = None 
-		self.summary_writer = None
-		self.summary_ops = None
 		self.prev_max_dev_loss = 10000000
 		self.latest_train_losses = []
+
 		self.learning_rate = None
 		self.learning_rate_decay_op = None
 
@@ -70,27 +69,8 @@ class ModelCore(object):
 		self.saver = None
 		self.builder = None
 
-		self.train_inputs_map = {}
-		self.train_outputs_map = {
-				"forward_only":{},
-				"update":{},
-				"debug_update":{}
-		}
-
-		self.infer_inputs_map = {}
-		self.infer_outputs_map = {}
-
-		
-
 		self.run_options = None #tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 		self.run_metadata = None #tf.RunMetadata()
-
-	@property
-	#def train_step(self):
-	#	if not self.sess:
-	#		print "FATAL: The model is never initialized in any session !!"  
-	#		exit(0)
-	#	return self.global_step.eval(self.sess)
 
 	@abc.abstractmethod 
 	def build(self, for_deploy, variants=""):
@@ -100,16 +80,13 @@ class ModelCore(object):
 	def get_init_ops():
 		return
 
-	@abc.abstractmethod
-	def get_init_fn(self):
+	def init_fn(scaffold, sess):
 		init_ops = self.get_init_ops()
-		def init_fn(scaffold, sess):
-			graphlg.info("Saver not used, created model with fresh parameters.")
-			graphlg.info("initialize new models")
-			for each in init_ops:
-				graphlg.info("initialize op: %s" % str(each))
-				sess.run(each)
-		return init_fn
+		graphlg.info("Saver not used, created model with fresh parameters.")
+		graphlg.info("initialize new models")
+		for each in init_ops:
+			graphlg.info("initialize op: %s" % str(each))
+			sess.run(each)
 
 	@abc.abstractmethod
 	def get_restorer(self):
@@ -334,47 +311,6 @@ class ModelCore(object):
 				del feed_dict[k]
 		return feed_dict
 
-	def getFetchNodes(self, forward_only, debug=False, for_deploy=False): 
-		if not for_deploy:
-			if forward_only:
-				output_map = self.train_outputs_map["forward_only"]
-			elif debug:
-				output_map = self.train_outputs_map["debug_update"]
-			else:
-				output_map = self.train_outputs_map["update"] 
-		else:
-			output_map = self.infer_outputs_map
-		return output_map
-
-	def step(self, input_feed, forward_only, debug=False, for_deploy=False, run_meta=False, sess=None):
-		if sess: 
-			curr_sess = sess
-		elif not self.sess:
-			print "FATAL: The model is never initialized in any session !!"  
-			exit(0)
-		else:
-			curr_sess = self.sess
-		if not for_deploy:
-			if forward_only:
-				output_map = self.train_outputs_map["forward_only"]
-			elif debug:
-				output_map = self.train_outputs_map["debug_update"]
-			else:
-				output_map = self.train_outputs_map["update"] 
-		else:
-			output_map = self.infer_outputs_map
-		
-		if run_meta: 
-			step_outs = curr_sess.run(output_map, input_feed,
-						options=self.run_options, run_metadata=self.run_metadata)
-			tf.contrib.tfprof.model_analyzer.print_model_analysis(
-						tf.get_default_graph(),run_meta=self.run_metadata,
-						tfprof_options=tf.contrib.tfprof.model_analyzer.PRINT_ALL_TIMING_MEMORY)
-		else:
-			step_outs = curr_sess.run(output_map, input_feed)
-
-		return step_outs
-
 	def join_param_server(self):
 		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
 		session_config = tf.ConfigProto(allow_soft_placement=True,
@@ -503,7 +439,7 @@ class ModelCore(object):
 			master = ""
 			hooks = [saver_hook, sum_hook] 
 
-		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.get_init_fn,
+		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn,
 									 ready_op=None, ready_for_local_init_op=ready_for_local_init_op,
 									 local_init_op=local_op, summary_op=None,
 									 saver=self.get_restorer())
@@ -513,11 +449,7 @@ class ModelCore(object):
 													  scaffold=scaffold,
 													  hooks=hooks,
 													  config=sess_config,
-													  #save_checkpoint_secs=None,
-													  #save_summaries_steps=None,
-													  #save_summaries_secs=None,
 													  stop_grace_period_secs=120)
-													  #log_step_count_steps=20) 
 		
 		if self.conf.use_data_queue and self.task_id == 0:
 			graphlg.info("chief worker start data queue runners...")
@@ -545,43 +477,8 @@ class ModelCore(object):
 			self.sess.run(self.learning_rate_decay_op)
 			self.latest_train_losses = []
 
-	#def summarize_train(self, input_feed, global_step):
-	#	summary = self.sess.run(self.summary_ops, input_feed)
-	#	self.summary_writer.add_summary(summary, global_step)
-	#	self.summary_writer.flush()
-
 	def get_visual_tensor(self):
 		return None, None
-
-	def checkpoint(self, dev_num, steps):
-		if not self.sess:
-			print "FATAL: The model is never initialized in any session !!"  
-			exit(0)
-		dev_loss = 0.0
-		dev_time = 0.0
-		count = 0
-		begin = 0
-		while begin < dev_num: 
-			examples = self.fetch_data(use_random=False, begin=0, size=self.conf.batch_size, dev=True) 
-			t0 = time.time()
-			input_feed = self.preproc(examples)
-			step_out = self.step(input_feed=input_feed, forward_only=True)
-			dev_time = round(time.time() - t0, 2)
-			dev_loss += step_out["loss"] * 1.0 
-			count += 1
-			begin += self.conf.batch_size
-		dev_loss /= count 
-		dev_time /= count
-		summary = tf.Summary()
-		summary.value.add(tag="dev_loss", simple_value=dev_loss)
-		self.summary_writer.add_summary(summary, steps)
-		self.summary_writer.flush()
-
-		if steps > 1000 and dev_loss < self.prev_max_dev_loss and self.task_id == 0:
-			trainlg.info("Need Saving....")
-			self.prev_max_dev_loss = round(dev_loss, 4)
-			self.saver.save(self.sess, os.path.join(self.ckpt_dir, "model.ckpt"), global_step=steps)
-		return dev_loss, dev_time
 
 	def visualize(self, gpu=0, records=[]): 
 		visual_vec = self.project()
@@ -635,40 +532,36 @@ class ModelCore(object):
 										gpu_options=gpu_options,
 										intra_op_parallelism_threads=32)
 		print "Building..."
-		with tf.device("/gpu:%d" % gpu):
-			self.build(for_deploy=False, variants="")
-
-		init_fn = self.get_init_fn()
-		restorer = self.get_restorer()
+		graph_nodes = self.build_all(for_deploy=False, variants="", device="/gpu:%d" % gpu)
 
 		print "Creating Data queue..."
 		path = os.path.join(confs[self.name].data_dir, "train.data")
 		qr = QueueReader(filename_list=[path])
 		deq_batch_records = qr.batched(batch_size=confs[self.name].batch_size, min_after_dequeue=3)
 		
-		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=init_fn, ready_op=None, 
-									ready_for_local_init_op=None, local_init_op=None, summary_op=None, saver=restorer)
-		if create_new:
-			ckpt_dir = "../runtime/null" 
-		else:
-			ckpt_dir = os.path.join("../runtime/", self.name)
-
-		self.sess = tf.train.MonitoredTrainingSession(master="", is_chief=True, checkpoint_dir=ckpt_dir,
-									scaffold=scaffold, hooks=None, save_checkpoint_secs=None, save_summaries_steps=None,
-									save_summaries_secs=None, config=None, stop_grace_period_secs=120, log_step_count_steps=20) 
+		ckpt_dir = "../runtime/null" if create_new else os.path.join("../runtime/", self.name)
+		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn,
+									ready_op=None, ready_for_local_init_op=None, local_init_op=None,
+									summary_op=None, saver=self.get_restorer())
+		sess = tf.train.MonitoredTrainingSession(master="", is_chief=True, checkpoint_dir=ckpt_dir, scaffold=scaffold) 
 		#sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 		#sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
-		qr.start(session=self.sess)
+		qr.start(session=sess)
 
 		print "Dequeue one batch..."
-		batch_records = self.sess.run(deq_batch_records)
+		batch_records = sess.run(deq_batch_records)
 		N = 10 
 		while True:
 			print "Step only on one batch..."
 			feed_dict = self.preproc(batch_records, use_seg=False, for_deploy=False)
 			t0 = time.time()
-			out = self.step(feed_dict, False, True, False)
+			fetches = {
+				"loss":graph_nodes["loss"],
+				"update":graph_nodes["update"],
+				"outputs":graph_nodes["outputs"]
+			}
+			out = self.sess.run(fetches, feed_dict)
 			t = time.time() - t0
 			for i in range(N):
 				for key in feed_dict:
@@ -683,7 +576,6 @@ class ModelCore(object):
 			query = raw_input(">>")
 			batch_records = [query]
 			feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True)
-			#out_dict = self.step(feed_dict, False, False, True)
 			out_dict = sess.run(graph_nodes["outputs"], feed_dict) 
 			out = self.after_proc(out_dict) 
 			self.print_after_proc(out)
@@ -698,7 +590,6 @@ class ModelCore(object):
 			print "Score resp: %s" % resp_str
 			batch_records = ["%s\t%s" % (post, resp_str)]
 			feed_dict = self.preproc(batch_records, use_seg=True, for_deploy=False)
-			#out_dict = self.step(feed_dict, False, False, True)
 			out_dict = sess.run(graph_nodes["outputs"], feed_dict)
 			prob = out_dict["logprobs"]
 			print prob
