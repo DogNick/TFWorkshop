@@ -11,17 +11,17 @@ confs["allattn"].batch_size			            = 128
 confs["allattn"].input_max_len			        = 30 
 confs["allattn"].output_max_len                 = 30 
 
-confs["allattn"].hidden_units					= 512
+confs["allattn"].hidden_units					= 768 
 confs["allattn"].num_heads						= 8 
-confs["allattn"].num_blocks					    = 6 
+confs["allattn"].num_blocks					    = 4 
 confs["allattn"].max_to_keep					= 10 
-confs["allattn"].embedding_size					= 512 
+confs["allattn"].embedding_size					= 768 
 confs["allattn"].embedding_init                 = None #"/search/odin/Nick/GenerateWorkshop/data/WEIBO-2-downsample/weibo.w2v.npy"
 confs["allattn"].data_dir						= "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-all-clean" 
 confs["allattn"].use_data_queue                 = False 
 confs["allattn"].tokenize_mode                  = "word" 
 confs["allattn"].dropout_rate                   = 0.1 
-confs["allattn"].opt_name                       = "Adam" 
+confs["allattn"].opt_name                       = "COCOB" 
 
 
 confs["allattn_dist"] = copy.deepcopy(confs["allattn"])

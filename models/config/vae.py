@@ -51,6 +51,57 @@ confs["vae-merge-stc-weibo"].beam_splits          = [8,8,8,8,8,8,8,8,8]
 confs["vae-merge-stc-weibo"].use_data_queue       = False
 confs["vae-merge-stc-weibo"].stddev               = 3.0 
 
+
+confs["cvae-simpleprior-reddit-addmem"] = copy.deepcopy(confs["vae"])
+confs["cvae-simpleprior-reddit-addmem"].model_kind                    = "CVAERNN"
+confs["cvae-simpleprior-reddit-addmem"].input_vocab_size              = 30000 
+confs["cvae-simpleprior-reddit-addmem"].output_vocab_size             = 30000 
+
+confs["cvae-simpleprior-reddit-addmem"].learning_rate                 = 0.0001
+confs["cvae-simpleprior-reddit-addmem"].num_layers                    = 3 
+
+confs["cvae-simpleprior-reddit-addmem"].embedding_size                = 200 
+confs["cvae-simpleprior-reddit-addmem"].cell_model                    = "GRUCell"
+confs["cvae-simpleprior-reddit-addmem"].num_units                     = 1024 
+confs["cvae-simpleprior-reddit-addmem"].addmem                        = True 
+#confs["cvae-simpleprior-reddit-addmem"].bidirectional                 = True 
+confs["cvae-simpleprior-reddit-addmem"].embedding_init				  = "/search/odin/Nick/GenerateWorkshop/data/SRT-reddit-proced-voca-filtered/pair_proced3_for_w2v.w2v.npy"
+confs["cvae-simpleprior-reddit-addmem"].data_dir                      = "/search/odin/Nick/GenerateWorkshop/data/SRT-reddit-proced-voca-filtered"
+confs["cvae-simpleprior-reddit-addmem"].beam_splits                   = [20,20,20,20,20,20,20,20]#[12,12,12,12,12,12,12]#[5,5,5,1,1,1,1]#[3,3,3,1,1,1] 
+confs["cvae-simpleprior-reddit-addmem"].use_data_queue                = False 
+confs["cvae-simpleprior-reddit-addmem"].input_max_len                 = 25 
+confs["cvae-simpleprior-reddit-addmem"].output_max_len                = 30 
+confs["cvae-simpleprior-reddit-addmem"].prior_type                    = "simple"
+confs["cvae-simpleprior-reddit-addmem"].enc_latent_dim                = 128 
+confs["cvae-simpleprior-reddit-addmem"].stddev                        = 1.0
+confs["cvae-simpleprior-reddit-addmem"].kld_ratio                     = 1.0
+confs["cvae-simpleprior-reddit-addmem"].bow_ratio                     = None 
+confs["cvae-simpleprior-reddit-addmem"].opt_name					  = "Adam" 
+
+
+confs["vae-reddit-addmem"] = copy.deepcopy(confs["vae"])
+confs["vae-reddit-addmem"].model_kind           = "VAERNN"
+confs["vae-reddit-addmem"].input_vocab_size     = 30000
+confs["vae-reddit-addmem"].output_vocab_size    = 30000
+confs["vae-reddit-addmem"].lr_check_steps       = 150 
+confs["vae-reddit-addmem"].lr_keep_steps        = 80000  
+confs["vae-reddit-addmem"].learning_rate        = 0.0001
+confs["vae-reddit-addmem"].learning_rate_decay_factor = 1.0 
+confs["vae-reddit-addmem"].batch_size           = 128 
+confs["vae-reddit-addmem"].cell_model           = "GRUCell"
+#confs["vae-reddit-addmem"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-2-downsample/weibo.w2v.npy" 
+confs["vae-reddit-addmem"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/SRT-reddit-proced-voca-filtered"
+confs["vae-reddit-addmem"].input_max_len        = 45 
+confs["vae-reddit-addmem"].output_max_len       = 50 
+confs["vae-reddit-addmem"].opt_name             = "COCOB" 
+confs["vae-reddit-addmem"].enc_latent_dim       = 1024 
+confs["vae-reddit-addmem"].lam                  = 0.0 
+confs["vae-reddit-addmem"].beam_splits          = [8,8,8,8,8,8,8,8,8] 
+confs["vae-reddit-addmem"].use_data_queue       = False
+confs["vae-reddit-addmem"].stddev               = 1.0 
+confs["vae-reddit-addmem"].addmem               = True 
+
+
 ##################################################################################
 #
 # New CVAE
@@ -249,7 +300,7 @@ confs["vae-1024-attn-addmem"].learning_rate        = 0.0001
 confs["vae-1024-attn-addmem"].learning_rate_decay_factor = 1.0 
 confs["vae-1024-attn-addmem"].batch_size           = 128 
 confs["vae-1024-attn-addmem"].cell_model           = "LSTMCell"
-confs["vae-1024-attn-addmem"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-2-downsample/weibo.w2v.npy" 
+#confs["vae-1024-attn-addmem"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-2-downsample/weibo.w2v.npy" 
 confs["vae-1024-attn-addmem"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-all-clean"
 confs["vae-1024-attn-addmem"].input_max_len        = 35 
 confs["vae-1024-attn-addmem"].output_max_len       = 35 

@@ -279,8 +279,7 @@ class VAERNN(ModelCore):
 			}
 			if variants == "score":
 				dec_init_state = zero_attn_states
-				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, 
-																   embedding=self.embedding, sampling_probability=0.0,
+				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, embedding=self.embedding, sampling_probability=0.0,
 																   out_proj=self.out_proj)
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
 				my_decoder = score_decoder.ScoreDecoder(cell=attn_cell, helper=hp_train, out_proj=self.out_proj, initial_state=dec_init_state, output_layer=output_layer)
@@ -404,16 +403,18 @@ class VAERNN(ModelCore):
 		var_map = {}
 		for each in var_list:
 			name = each.name
-			name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
-			name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
+			#name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
+			#name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
+			name = re.sub("gru_cell/bias", "gru_cell/biases", name)
+			name = re.sub("gru_cell/kernel", "gru_cell/weights", name)
 			#name = re.sub("gates/bias", "gates/biases", name)
 			#name = re.sub("candidate/bias", "candidate/biases", name)
 			#name = re.sub("gates/kernel", "gates/weights", name)
 			#name = re.sub("candidate/kernel", "candidate/weights", name)
-			##name = re.sub("bias", "biases", name)
-			##name = re.sub("dense/weights", "dense/kernel", name)
-			##name = re.sub("dense/biases", "dense/bias", name)
-			name = re.sub(":0", "", name)
+			#name = re.sub("bias", "biases", name)
+			#name = re.sub("dense/weights", "dense/kernel", name)
+			#name = re.sub("dense/biases", "dense/bias", name)
+			#name = re.sub(":0", "", name)
 			var_map[name] = each
 
 		restorer = tf.train.Saver(var_list=var_map)
@@ -445,7 +446,8 @@ class VAERNN(ModelCore):
 
 if __name__ == "__main__":
 	#name = "vae-merge-stc-weibo" 
-	name = "vae-1024-attn-addmem"
+	#name = "vae-1024-attn-addmem"
+	name = "vae-reddit-addmem"
 	#name = "vae-bi-1024-attn-addmem-poem"
 	model = VAERNN(name)
 	if len(sys.argv) == 2:

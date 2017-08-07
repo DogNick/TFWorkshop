@@ -53,9 +53,9 @@
 
 
 ##############################################################
-sh job.sh create allattn single 0 0 
-sleep 1.0
-sh job.sh see allattn 
+#sh job.sh create allattn single 0 0 
+#sleep 1.0
+#sh job.sh see allattn 
 
 #sh job.sh create allattn_dist ps 0 0 
 #sh job.sh create allattn_dist ps 1 0 
@@ -71,3 +71,7 @@ sh job.sh see allattn
 #
 #sleep 1.0
 #sh job.sh see allattn_dist
+
+sh job.sh create vae-reddit-addmem single 0 1 
+sleep 1.0
+sh job.sh see vae-reddit-addmem 

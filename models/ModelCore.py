@@ -80,13 +80,15 @@ class ModelCore(object):
 	def get_init_ops():
 		return
 
-	def init_fn(scaffold, sess):
+	def init_fn(self):
 		init_ops = self.get_init_ops()
-		graphlg.info("Saver not used, created model with fresh parameters.")
-		graphlg.info("initialize new models")
-		for each in init_ops:
-			graphlg.info("initialize op: %s" % str(each))
-			sess.run(each)
+		def fn(scaffold, sess):
+			graphlg.info("Saver not used, created model with fresh parameters.")
+			graphlg.info("initialize new models")
+			for each in init_ops:
+				graphlg.info("initialize op: %s" % str(each))
+				sess.run(each)
+		return fn
 
 	@abc.abstractmethod
 	def get_restorer(self):
@@ -439,7 +441,7 @@ class ModelCore(object):
 			master = ""
 			hooks = [saver_hook, sum_hook] 
 
-		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn,
+		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn(),
 									 ready_op=None, ready_for_local_init_op=ready_for_local_init_op,
 									 local_init_op=local_op, summary_op=None,
 									 saver=self.get_restorer())
@@ -525,7 +527,7 @@ class ModelCore(object):
 			#	f.write("%s\t%d\n" % (line, i))
 		return
 		
-	def dummy_train(self, gpu=0, create_new=True):
+	def dummy_train(self, gpu=0, create_new=True, train_root="../runtime"):
 		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
 		session_config = tf.ConfigProto(allow_soft_placement=True,
 										log_device_placement=False,
@@ -533,17 +535,27 @@ class ModelCore(object):
 										intra_op_parallelism_threads=32)
 		print "Building..."
 		graph_nodes = self.build_all(for_deploy=False, variants="", device="/gpu:%d" % gpu)
+		
 
 		print "Creating Data queue..."
 		path = os.path.join(confs[self.name].data_dir, "train.data")
 		qr = QueueReader(filename_list=[path])
 		deq_batch_records = qr.batched(batch_size=confs[self.name].batch_size, min_after_dequeue=3)
 		
-		ckpt_dir = "../runtime/null" if create_new else os.path.join("../runtime/", self.name)
-		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn,
+		if create_new:
+			ckpt_dir = os.path.join(train_root, "null") 
+			shutil.rmtree(ckpt_dir)
+		else:
+			ckpt_dir = os.path.join(train_root, self.name)
+		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn(),
 									ready_op=None, ready_for_local_init_op=None, local_init_op=None,
 									summary_op=None, saver=self.get_restorer())
-		sess = tf.train.MonitoredTrainingSession(master="", is_chief=True, checkpoint_dir=ckpt_dir, scaffold=scaffold) 
+		sess_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
+									gpu_options=gpu_options, intra_op_parallelism_threads=32)
+		sess = tf.train.MonitoredTrainingSession(master="", is_chief=True, checkpoint_dir=ckpt_dir, 
+									scaffold=scaffold, save_summaries_steps=None, save_summaries_secs=None,
+									config=sess_config) 
+		#sess = tf.Session(config=sess_config)
 		#sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 		#sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
@@ -559,14 +571,22 @@ class ModelCore(object):
 			fetches = {
 				"loss":graph_nodes["loss"],
 				"update":graph_nodes["update"],
-				"outputs":graph_nodes["outputs"]
+				"debug_outputs":graph_nodes["debug_outputs"]
 			}
-			out = self.sess.run(fetches, feed_dict)
+			out = sess.run(fetches, feed_dict)
 			t = time.time() - t0
 			for i in range(N):
+				print "=================="
 				for key in feed_dict:
-					print "%s_%d:" % (key, i), " ".join(feed_dict[key][i])
-				print ">>> outputs_%d:" % i, " ".join(out["outputs"][i])
+					if isinstance(feed_dict[key][i], list):
+						print "%s_%d:" % (key, i), " ".join([str(each) for each in feed_dict[key][i]])
+					else:
+						print "%s_%d:" % (key, i), str(feed_dict[key][i])
+				if isinstance(out["debug_outputs"], dict):
+					for k,v in out["debug_outputs"].items():
+						print ">>> %s_%d:" % (k, i), " ".join(v[i])
+				else:
+					print ">>> debug_outputs_%d:" % i, " ".join(out["debug_outputs"][i])
 			print "TIME: %.4f, LOSS: %.10f" % (t, out["loss"])
 			print ""
 

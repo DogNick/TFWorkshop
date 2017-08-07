@@ -204,6 +204,7 @@ class CVAERNN(ModelCore):
 		self.out_proj = None
 
 	def build(self, for_deploy, variants=""):
+		scope = ""
 		conf = self.conf
 		name = self.name
 		job_type = self.job_type
@@ -240,246 +241,223 @@ class CVAERNN(ModelCore):
 		graphlg.info("Preparing decoder inps...")
 		dec_inps = tf.slice(self.dec_inps, [0, 0], [-1, conf.output_max_len + 1])
 
-		with variable_scope.variable_scope(self.model_kind, dtype=dtype) as scope: 
-			# Create encode graph and get attn states
-			graphlg.info("Creating embeddings and embedding enc_inps.")
+		# Create encode graph and get attn states
+		graphlg.info("Creating embeddings and embedding enc_inps.")
 
-			with ops.device("/cpu:0"):
-				self.embedding = variable_scope.get_variable("embedding", [conf.output_vocab_size, conf.embedding_size])
-				self.emb_inps = embedding_lookup_unique(self.embedding, self.enc_inps)
-				emb_dec_inps = embedding_lookup_unique(self.embedding, dec_inps)
+		with ops.device("/cpu:0"):
+			self.embedding = variable_scope.get_variable("embedding", [conf.output_vocab_size, conf.embedding_size])
+			self.emb_inps = embedding_lookup_unique(self.embedding, self.enc_inps)
+			emb_dec_inps = embedding_lookup_unique(self.embedding, dec_inps)
 
-			graphlg.info("Creating dynamic x rnn...")
-			self.enc_outs, self.enc_states, mem_size, enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
-																			self.emb_inps, self.enc_lens, keep_prob=1.0, bidi=False, name_scope="x_enc")
-			memory = tf.reshape(tf.concat([self.enc_outs] * self.beam_size, 2), [-1, conf.input_max_len, mem_size])
-			memory_lens = tf.squeeze(tf.reshape(tf.concat([tf.expand_dims(self.enc_lens, 1)] * self.beam_size, 1), [-1, 1]), 1)
-			batch_size = tf.shape(self.enc_outs)[0]
+		graphlg.info("Creating dynamic x rnn...")
+		self.enc_outs, self.enc_states, mem_size, enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
+																		self.emb_inps, self.enc_lens, keep_prob=1.0, bidi=False, name_scope="x_enc")
+		memory = tf.reshape(tf.concat([self.enc_outs] * self.beam_size, 2), [-1, conf.input_max_len, mem_size])
+		memory_lens = tf.squeeze(tf.reshape(tf.concat([tf.expand_dims(self.enc_lens, 1)] * self.beam_size, 1), [-1, 1]), 1)
+		batch_size = tf.shape(self.enc_outs)[0]
 
-			x_s = self.enc_states[-1].h if isinstance(self.enc_states[-1], LSTMStateTuple) else self.enc_states[-1]
+		x_s = self.enc_states[-1].h if isinstance(self.enc_states[-1], LSTMStateTuple) else self.enc_states[-1]
 
-			# Not sure, its's only for the gradient bug fixup 
-			x_s = x_s + tf.reduce_sum(self.enc_outs, 1)
-			KLD = 0.0
-			hidden_units = int(math.sqrt(mem_size * self.conf.enc_latent_dim))
+		# Not sure, its's only for the gradient bug fixup 
+		x_s = x_s + tf.reduce_sum(self.enc_outs, 1)
+		KLD = 0.0
+		hidden_units = int(math.sqrt(mem_size * self.conf.enc_latent_dim))
 
-			# Different graph for training and inference time 
-			if not for_deploy:
-				# Y inputs for posterior z 
-				y_emb_inps = tf.slice(emb_dec_inps, [0, 1, 0], [-1, -1, -1])
-				y_enc_outs, y_enc_states, y_mem_size, y_enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
-																			y_emb_inps, self.dec_lens, keep_prob=1.0, bidi=False, name_scope="y_enc")
-				#y_memory = tf.reshape(tf.concat([self.enc_outs] * self.beam_size, 2), [-1, conf.input_max_len, mem_size])
-				#y_memory_lens = tf.squeeze(tf.reshape(tf.concat([tf.expand_dims(self.enc_lens, 1)] * self.beam_size, 1), [-1, 1]), 1)
-				y_s = y_enc_states[-1].h if isinstance(y_enc_states[-1], LSTMStateTuple) else y_enc_states[-1]
+		# Different graph for training and inference time 
+		if not for_deploy:
+			# Y inputs for posterior z 
+			y_emb_inps = tf.slice(emb_dec_inps, [0, 1, 0], [-1, -1, -1])
+			y_enc_outs, y_enc_states, y_mem_size, y_enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
+																		y_emb_inps, self.dec_lens, keep_prob=1.0, bidi=False, name_scope="y_enc")
+			#y_memory = tf.reshape(tf.concat([self.enc_outs] * self.beam_size, 2), [-1, conf.input_max_len, mem_size])
+			#y_memory_lens = tf.squeeze(tf.reshape(tf.concat([tf.expand_dims(self.enc_lens, 1)] * self.beam_size, 1), [-1, 1]), 1)
+			y_s = y_enc_states[-1].h if isinstance(y_enc_states[-1], LSTMStateTuple) else y_enc_states[-1]
 
-				enc_layer = layers_core.Dense(mem_size, use_bias=True, name="enc_x_y", activation=tf.tanh)
-				x_y_enc = enc_layer(tf.concat([x_s, y_s], 1))
+			enc_layer = layers_core.Dense(mem_size, use_bias=True, name="enc_x_y", activation=tf.tanh)
+			x_y_enc = enc_layer(tf.concat([x_s, y_s], 1))
 
-				_, mu_prior, logvar_prior = PriorNet(x_s, hidden_units, self.conf.enc_latent_dim, stddev=1.0, prior_type=conf.prior_type)
-				z, KLD, l2 = CreateVAE(x_y_enc, self.conf.enc_latent_dim, mu_prior, logvar_prior, stddev=self.conf.stddev)
-			else:
-				z, _, _ = PriorNet(x_s, hidden_units, self.conf.enc_latent_dim, stddev=1.0, prior_type=conf.prior_type)
-					
-			# thinking states
-			thinking_state = tf.concat([z, x_s], 1)
+			_, mu_prior, logvar_prior = PriorNet(x_s, hidden_units, self.conf.enc_latent_dim, stddev=1.0, prior_type=conf.prior_type)
+			z, KLD, l2 = CreateVAE(x_y_enc, self.conf.enc_latent_dim, mu_prior, logvar_prior, stddev=self.conf.stddev)
+		else:
+			z, _, _ = PriorNet(x_s, hidden_units, self.conf.enc_latent_dim, stddev=1.0, prior_type=conf.prior_type)
+				
+		# thinking states
+		thinking_state = tf.concat([z, x_s], 1)
 
-			# project z + x_thinking_state to decoder state
-			decision_layer = layers_core.Dense(mem_size, use_bias=True, name="decide", activation=tf.tanh)
-			thinking_state = decision_layer(thinking_state) 
+		# project z + x_thinking_state to decoder state
+		decision_layer = layers_core.Dense(mem_size, use_bias=True, name="decide", activation=tf.tanh)
+		thinking_state = decision_layer(thinking_state) 
 
-			# add BOW loss
-			num_hidden_units = int(math.sqrt(conf.output_vocab_size * int(thinking_state.shape[1])))
-			bow_l1 = layers_core.Dense(num_hidden_units, use_bias=True, name="bow_hidden", activation=tf.tanh)
-			bow_l2 = layers_core.Dense(conf.output_vocab_size, use_bias=True, name="bow_out", activation=tf.tanh)
-			bow = bow_l2(bow_l1(thinking_state)) 
+		# add BOW loss
+		num_hidden_units = int(math.sqrt(conf.output_vocab_size * int(thinking_state.shape[1])))
+		bow_l1 = layers_core.Dense(num_hidden_units, use_bias=True, name="bow_hidden", activation=tf.tanh)
+		bow_l2 = layers_core.Dense(conf.output_vocab_size, use_bias=True, name="bow_out", activation=tf.tanh)
+		bow = bow_l2(bow_l1(thinking_state)) 
 
-			y_dec_inps = tf.slice(self.dec_inps, [0, 1], [-1, -1])
-			bow_y = tf.reduce_sum(tf.one_hot(y_dec_inps, on_value=1.0, off_value=0.0, axis=-1, depth=conf.output_vocab_size), axis=1)
-			batch_bow_losses = tf.reduce_sum(bow_y * (-1.0) * tf.nn.log_softmax(bow), axis=1)
+		y_dec_inps = tf.slice(self.dec_inps, [0, 1], [-1, -1])
+		bow_y = tf.reduce_sum(tf.one_hot(y_dec_inps, on_value=1.0, off_value=0.0, axis=-1, depth=conf.output_vocab_size), axis=1)
+		batch_bow_losses = tf.reduce_sum(bow_y * (-1.0) * tf.nn.log_softmax(bow), axis=1)
 
-			max_mem_size = self.conf.input_max_len + self.conf.output_max_len + 2
-			cell = AttnCell(cell_model=conf.cell_model, num_units=mem_size, num_layers=conf.num_layers, attn_type=self.conf.attention,
-							memory=memory, mem_lens=memory_lens, max_mem_size=max_mem_size, addmem=self.conf.addmem,
-							keep_prob=1.0, dtype=tf.float32)
+		max_mem_size = self.conf.input_max_len + self.conf.output_max_len + 2
+		cell = AttnCell(cell_model=conf.cell_model, num_units=mem_size, num_layers=conf.num_layers, attn_type=self.conf.attention,
+						memory=memory, mem_lens=memory_lens, max_mem_size=max_mem_size, addmem=self.conf.addmem,
+						keep_prob=1.0, dtype=tf.float32)
 
-			# Fit decision states to shape of attention decoder cell states 
-			zero_attn_states = DecStateInit(thinking_state, mem_size, cell, batch_size, self.beam_size)
-			
-			# Output projection
-			graphlg.info("Creating out_proj...") 
-			if conf.out_layer_size:
-				w = tf.get_variable("proj_w", [conf.out_layer_size, conf.output_vocab_size], dtype=dtype)
-			else:
-				w = tf.get_variable("proj_w", [mem_size, conf.output_vocab_size], dtype=dtype)
-			b = tf.get_variable("proj_b", [conf.output_vocab_size], dtype=dtype)
-			self.out_proj = (w, b)
+		# Fit decision states to shape of attention decoder cell states 
+		zero_attn_states = DecStateInit(thinking_state, mem_size, cell, batch_size, self.beam_size)
+		
+		# Output projection
+		graphlg.info("Creating out_proj...") 
+		if conf.out_layer_size:
+			w = tf.get_variable("proj_w", [conf.out_layer_size, conf.output_vocab_size], dtype=dtype)
+		else:
+			w = tf.get_variable("proj_w", [mem_size, conf.output_vocab_size], dtype=dtype)
+		b = tf.get_variable("proj_b", [conf.output_vocab_size], dtype=dtype)
+		self.out_proj = (w, b)
 
-			
-			if not for_deploy: 
-				dec_init_state = zero_attn_states
-				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, 
-																   embedding=self.embedding, sampling_probability=0.0,
-																   out_proj=self.out_proj)
-				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
-				my_decoder = basic_decoder.BasicDecoder(cell=cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
-				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, impute_finished=(self.conf.addmem==False),
-																maximum_iterations=conf.output_max_len + 1, scope=scope)
-				outputs = cell_outs.rnn_output
+		
+		if not for_deploy: 
+			inputs = {}
+			dec_init_state = zero_attn_states
+			hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, 
+															   embedding=self.embedding, sampling_probability=0.0,
+															   out_proj=self.out_proj)
+			output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
+			my_decoder = basic_decoder.BasicDecoder(cell=cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
+			cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, impute_finished=(self.conf.addmem==False),
+															maximum_iterations=conf.output_max_len + 1, scope=scope)
+			outputs = cell_outs.rnn_output
 
-				L = tf.shape(outputs)[1]
-				outputs = tf.reshape(outputs, [-1, int(self.out_proj[0].shape[0])])
-				outputs = tf.matmul(outputs, self.out_proj[0]) + self.out_proj[1] 
-				logits = tf.reshape(outputs, [-1, L, int(self.out_proj[0].shape[1])])
+			L = tf.shape(outputs)[1]
+			outputs = tf.reshape(outputs, [-1, int(self.out_proj[0].shape[0])])
+			outputs = tf.matmul(outputs, self.out_proj[0]) + self.out_proj[1] 
+			logits = tf.reshape(outputs, [-1, L, int(self.out_proj[0].shape[1])])
 
-				# branch 1 for debugging, doesn't have to be called
-				#m = tf.shape(self.outputs)[0]
-				#self.mask = tf.zeros([m, int(w.shape[1])])
-				#for i in [3]:
-				#	self.mask = self.mask + tf.one_hot(indices=tf.ones([m], dtype=tf.int32) * i, on_value=100.0, depth=int(w.shape[1]))
-				#self.outputs = self.outputs - self.mask
+			# branch 1 for debugging, doesn't have to be called
+			#m = tf.shape(self.outputs)[0]
+			#self.mask = tf.zeros([m, int(w.shape[1])])
+			#for i in [3]:
+			#	self.mask = self.mask + tf.one_hot(indices=tf.ones([m], dtype=tf.int32) * i, on_value=100.0, depth=int(w.shape[1]))
+			#self.outputs = self.outputs - self.mask
 
-				self.outputs = tf.argmax(logits, axis=2)
-				self.outputs = tf.reshape(self.outputs, [-1, L])
-				self.outputs = self.out_table.lookup(tf.cast(self.outputs, tf.int64))
+			self.outputs = tf.argmax(logits, axis=2)
+			self.outputs = tf.reshape(self.outputs, [-1, L])
+			self.outputs = self.out_table.lookup(tf.cast(self.outputs, tf.int64))
 
-				# branch 2 for loss
-				tars = tf.slice(self.dec_inps, [0, 1], [-1, L])
-				wgts = tf.cumsum(tf.one_hot(self.dec_lens, L), axis=1, reverse=True)
+			# branch 2 for loss
+			tars = tf.slice(self.dec_inps, [0, 1], [-1, L])
+			wgts = tf.cumsum(tf.one_hot(self.dec_lens, L), axis=1, reverse=True)
 
-				#wgts = wgts * tf.expand_dims(self.down_wgts, 1)
-				self.loss = loss.sequence_loss(logits=logits, targets=tars, weights=wgts, average_across_timesteps=False, average_across_batch=False)
-				batch_wgt = tf.reduce_sum(self.down_wgts) + 1e-12 
-				bow_loss = tf.reduce_sum(batch_bow_losses * self.down_wgts) / batch_wgt
+			#wgts = wgts * tf.expand_dims(self.down_wgts, 1)
+			self.loss = loss.sequence_loss(logits=logits, targets=tars, weights=wgts, average_across_timesteps=False, average_across_batch=False)
+			batch_wgt = tf.reduce_sum(self.down_wgts) + 1e-12 
+			bow_loss = tf.reduce_sum(batch_bow_losses * self.down_wgts) / batch_wgt
 
-				example_losses = tf.reduce_sum(self.loss, 1)
-				see_loss = tf.reduce_sum(example_losses / tf.cast(self.dec_lens, tf.float32) * self.down_wgts) / batch_wgt
-				KLD = tf.reduce_sum(KLD * self.down_wgts) / batch_wgt
+			example_losses = tf.reduce_sum(self.loss, 1)
+			see_loss = tf.reduce_sum(example_losses / tf.cast(self.dec_lens, tf.float32) * self.down_wgts) / batch_wgt
+			KLD = tf.reduce_sum(KLD * self.down_wgts) / batch_wgt
 
-				self.loss = tf.reduce_sum(example_losses * self.down_wgts) / batch_wgt
-				tf.summary.scalar("loss", see_loss)
+			self.loss = tf.reduce_sum(example_losses * self.down_wgts) / batch_wgt
+			tf.summary.scalar("loss", see_loss)
 
-				if conf.kld_ratio:
-					self.loss += conf.kld_ratio * KLD
-					tf.summary.scalar("kld", KLD) 
-				if conf.bow_ratio:
-					self.loss += conf.bow_ratio * bow_loss 
-					tf.summary.scalar("kld", KLD) 
-					tf.summary.scalar("bow", bow_loss)
+			if conf.kld_ratio:
+				self.loss += conf.kld_ratio * KLD
+				tf.summary.scalar("kld", KLD) 
+			if conf.bow_ratio:
+				self.loss += conf.bow_ratio * bow_loss 
+				tf.summary.scalar("kld", KLD) 
+				tf.summary.scalar("bow", bow_loss)
 
-				# father's member 
-				self.summary_ops = tf.summary.merge_all()
-				self.update = self.backprop(self.loss)
-				self.train_outputs_map = {
-						"loss":see_loss,
-						"update":self.update
-				}
-				self.fo_outputs_map = {
-						"outputs":self.outputs,
-						"loss":see_loss
-				}
-				self.debug_outputs_map = {
-						"loss":see_loss,
-						"outputs":self.outputs,
-						"update":self.update
-				}
+			return self.loss, inputs, {"outputs":self.outputs}
+		else:
+			hp_infer = helper.GreedyEmbeddingHelper(embedding=self.embedding,
+													start_tokens=tf.ones(shape=[batch_size * self.beam_size], dtype=tf.int32),
+													end_token=EOS_ID, out_proj=self.out_proj)
+			output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
+			dec_init_state = beam_decoder.BeamState(tf.zeros([batch_size * self.beam_size]), zero_attn_states, tf.zeros([batch_size * self.beam_size], tf.int32))
 
-				#saver
-				self.trainable_params.extend(tf.trainable_variables())
-				self.saver = tf.train.Saver(max_to_keep=conf.max_to_keep)
+			my_decoder = beam_decoder.BeamDecoder(cell=cell, helper=hp_infer, out_proj=self.out_proj, initial_state=dec_init_state,
+													beam_splits=self.beam_splits, max_res_num=self.conf.max_res_num, output_layer=output_layer)
+			cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len)
 
-			else:
-				hp_infer = helper.GreedyEmbeddingHelper(embedding=self.embedding,
-														start_tokens=tf.ones(shape=[batch_size * self.beam_size], dtype=tf.int32),
-														end_token=EOS_ID, out_proj=self.out_proj)
-				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
-				dec_init_state = beam_decoder.BeamState(tf.zeros([batch_size * self.beam_size]), zero_attn_states, tf.zeros([batch_size * self.beam_size], tf.int32))
+			L = tf.shape(cell_outs.beam_ends)[1]
+			beam_symbols = cell_outs.beam_symbols
+			beam_parents = cell_outs.beam_parents
 
-				my_decoder = beam_decoder.BeamDecoder(cell=cell, helper=hp_infer, out_proj=self.out_proj, initial_state=dec_init_state,
-														beam_splits=self.beam_splits, max_res_num=self.conf.max_res_num, output_layer=output_layer)
-				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len)
+			beam_ends = cell_outs.beam_ends
+			beam_end_parents = cell_outs.beam_end_parents
+			beam_end_probs = cell_outs.beam_end_probs
+			alignments = cell_outs.alignments
 
-				L = tf.shape(cell_outs.beam_ends)[1]
-				beam_symbols = cell_outs.beam_symbols
-				beam_parents = cell_outs.beam_parents
-
-				beam_ends = cell_outs.beam_ends
-				beam_end_parents = cell_outs.beam_end_parents
-				beam_end_probs = cell_outs.beam_end_probs
-				alignments = cell_outs.alignments
-
-				beam_ends = tf.reshape(tf.transpose(beam_ends, [0, 2, 1]), [-1, L])
-				beam_end_parents = tf.reshape(tf.transpose(beam_end_parents, [0, 2, 1]), [-1, L])
-				beam_end_probs = tf.reshape(tf.transpose(beam_end_probs, [0, 2, 1]), [-1, L])
+			beam_ends = tf.reshape(tf.transpose(beam_ends, [0, 2, 1]), [-1, L])
+			beam_end_parents = tf.reshape(tf.transpose(beam_end_parents, [0, 2, 1]), [-1, L])
+			beam_end_probs = tf.reshape(tf.transpose(beam_end_probs, [0, 2, 1]), [-1, L])
 
 
-				# Creating tail_ids 
-				batch_size = tf.Print(batch_size, [batch_size], message="CVAERNN batch")
+			# Creating tail_ids 
+			batch_size = tf.Print(batch_size, [batch_size], message="CVAERNN batch")
 
-				#beam_symbols = tf.Print(cell_outs.beam_symbols, [tf.shape(cell_outs.beam_symbols)], message="beam_symbols")
-				#beam_parents = tf.Print(cell_outs.beam_parents, [tf.shape(cell_outs.beam_parents)], message="beam_parents")
-				#beam_ends = tf.Print(cell_outs.beam_ends, [tf.shape(cell_outs.beam_ends)], message="beam_ends") 
-				#beam_end_parents = tf.Print(cell_outs.beam_end_parents, [tf.shape(cell_outs.beam_end_parents)], message="beam_end_parents") 
-				#beam_end_probs = tf.Print(cell_outs.beam_end_probs, [tf.shape(cell_outs.beam_end_probs)], message="beam_end_probs") 
-				#alignments = tf.Print(cell_outs.alignments, [tf.shape(cell_outs.alignments)], message="beam_attns")
+			#beam_symbols = tf.Print(cell_outs.beam_symbols, [tf.shape(cell_outs.beam_symbols)], message="beam_symbols")
+			#beam_parents = tf.Print(cell_outs.beam_parents, [tf.shape(cell_outs.beam_parents)], message="beam_parents")
+			#beam_ends = tf.Print(cell_outs.beam_ends, [tf.shape(cell_outs.beam_ends)], message="beam_ends") 
+			#beam_end_parents = tf.Print(cell_outs.beam_end_parents, [tf.shape(cell_outs.beam_end_parents)], message="beam_end_parents") 
+			#beam_end_probs = tf.Print(cell_outs.beam_end_probs, [tf.shape(cell_outs.beam_end_probs)], message="beam_end_probs") 
+			#alignments = tf.Print(cell_outs.alignments, [tf.shape(cell_outs.alignments)], message="beam_attns")
 
-				batch_offset = tf.expand_dims(tf.cumsum(tf.ones([batch_size, self.beam_size], dtype=tf.int32) * self.beam_size, axis=0, exclusive=True), 2)
-				offset2 = tf.expand_dims(tf.cumsum(tf.ones([batch_size, self.beam_size * 2], dtype=tf.int32) * self.beam_size, axis=0, exclusive=True), 2)
+			batch_offset = tf.expand_dims(tf.cumsum(tf.ones([batch_size, self.beam_size], dtype=tf.int32) * self.beam_size, axis=0, exclusive=True), 2)
+			offset2 = tf.expand_dims(tf.cumsum(tf.ones([batch_size, self.beam_size * 2], dtype=tf.int32) * self.beam_size, axis=0, exclusive=True), 2)
 
-				out_len = tf.shape(beam_symbols)[1]
-				self.beam_symbol_strs = tf.reshape(self.out_table.lookup(tf.cast(beam_symbols, tf.int64)), [batch_size, self.beam_size, -1])
-				self.beam_parents = tf.reshape(beam_parents, [batch_size, self.beam_size, -1]) - batch_offset
+			out_len = tf.shape(beam_symbols)[1]
+			self.beam_symbol_strs = tf.reshape(self.out_table.lookup(tf.cast(beam_symbols, tf.int64)), [batch_size, self.beam_size, -1])
+			self.beam_parents = tf.reshape(beam_parents, [batch_size, self.beam_size, -1]) - batch_offset
 
-				self.beam_ends = tf.reshape(beam_ends, [batch_size, self.beam_size * 2, -1])
-				self.beam_end_parents = tf.reshape(beam_end_parents, [batch_size, self.beam_size * 2, -1]) - offset2
-				self.beam_end_probs = tf.reshape(beam_end_probs, [batch_size, self.beam_size * 2, -1])
-				self.beam_attns = tf.reshape(alignments, [batch_size, self.beam_size, out_len, -1])
+			self.beam_ends = tf.reshape(beam_ends, [batch_size, self.beam_size * 2, -1])
+			self.beam_end_parents = tf.reshape(beam_end_parents, [batch_size, self.beam_size * 2, -1]) - offset2
+			self.beam_end_probs = tf.reshape(beam_end_probs, [batch_size, self.beam_size * 2, -1])
+			self.beam_attns = tf.reshape(alignments, [batch_size, self.beam_size, out_len, -1])
 
-				#cell_outs.alignments
-				#self.outputs = tf.concat([outputs_str, tf.cast(cell_outs.beam_parents, tf.string)], 1)
+			#cell_outs.alignments
+			#self.outputs = tf.concat([outputs_str, tf.cast(cell_outs.beam_parents, tf.string)], 1)
 
-				#ones = tf.ones([batch_size, self.beam_size], dtype=tf.int32)
-				#aux_matrix = tf.cumsum(ones * self.beam_size, axis=0, exclusive=True)
+			#ones = tf.ones([batch_size, self.beam_size], dtype=tf.int32)
+			#aux_matrix = tf.cumsum(ones * self.beam_size, axis=0, exclusive=True)
 
-				#tm_beam_parents_reverse = tf.reverse(tf.transpose(cell_outs.beam_parents), axis=[0])
-				#beam_probs = final_state[1] 
+			#tm_beam_parents_reverse = tf.reverse(tf.transpose(cell_outs.beam_parents), axis=[0])
+			#beam_probs = final_state[1] 
 
-				#def traceback(prev_out, curr_input):
-				#	return tf.gather(curr_input, prev_out) 
-				#	
-				#tail_ids = tf.reshape(tf.cumsum(ones, axis=1, exclusive=True) + aux_matrix, [-1])
-				#tm_symbol_index_reverse = tf.scan(traceback, tm_beam_parents_reverse, initializer=tail_ids)
-				## Create beam index for symbols, and other info  
-				#tm_symbol_index = tf.concat([tf.expand_dims(tail_ids, 0), tm_symbol_index_reverse], axis=0)
-				#tm_symbol_index = tf.reverse(tm_symbol_index, axis=[0])
-				#tm_symbol_index = tf.slice(tm_symbol_index, [1, 0], [-1, -1])
-				#symbol_index = tf.expand_dims(tf.transpose(tm_symbol_index), axis=2)
-				#symbol_index = tf.concat([symbol_index, tf.cumsum(tf.ones_like(symbol_index), exclusive=True, axis=1)], axis=2)
+			#def traceback(prev_out, curr_input):
+			#	return tf.gather(curr_input, prev_out) 
+			#	
+			#tail_ids = tf.reshape(tf.cumsum(ones, axis=1, exclusive=True) + aux_matrix, [-1])
+			#tm_symbol_index_reverse = tf.scan(traceback, tm_beam_parents_reverse, initializer=tail_ids)
+			## Create beam index for symbols, and other info  
+			#tm_symbol_index = tf.concat([tf.expand_dims(tail_ids, 0), tm_symbol_index_reverse], axis=0)
+			#tm_symbol_index = tf.reverse(tm_symbol_index, axis=[0])
+			#tm_symbol_index = tf.slice(tm_symbol_index, [1, 0], [-1, -1])
+			#symbol_index = tf.expand_dims(tf.transpose(tm_symbol_index), axis=2)
+			#symbol_index = tf.concat([symbol_index, tf.cumsum(tf.ones_like(symbol_index), exclusive=True, axis=1)], axis=2)
 
-				## index alignments and output symbols
-				#alignments = tf.gather_nd(cell_outs.alignments, symbol_index)
-				#symbol_ids = tf.gather_nd(cell_outs.beam_symbols, symbol_index)
+			## index alignments and output symbols
+			#alignments = tf.gather_nd(cell_outs.alignments, symbol_index)
+			#symbol_ids = tf.gather_nd(cell_outs.beam_symbols, symbol_index)
 
-				## outputs and other info
-				#self.others = [alignments, beam_probs]
-				#self.outputs = self.out_table.lookup(tf.cast(symbol_ids, tf.int64))
-				self.infer_outputs_map["beam_symbols"] = self.beam_symbol_strs
-				self.infer_outputs_map["beam_parents"] = self.beam_parents
-				self.infer_outputs_map["beam_ends"] = self.beam_ends
-				self.infer_outputs_map["beam_end_parents"] = self.beam_end_parents
-				self.infer_outputs_map["beam_end_probs"] = self.beam_end_probs
-				self.infer_outputs_map["beam_attns"] = self.beam_attns
+			## outputs and other info
+			#self.others = [alignments, beam_probs]
+			#self.outputs = self.out_table.lookup(tf.cast(symbol_ids, tf.int64))
 
-				self.infer_inputs_map["enc_inps:0"] = self.enc_str_inps
-				self.infer_inputs_map["enc_lens:0"] = self.enc_lens
-
-				#saver
-				self.trainable_params.extend(tf.trainable_variables())
-				self.saver = tf.train.Saver(max_to_keep=conf.max_to_keep)
-
-				# Exporter for serving
-				graphlg.info("Graph done")
-				graphlg.info("")
+			inputs = { 
+				"enc_inps:0":self.enc_str_inps,
+				"enc_lens:0":self.enc_lens
+			}
+			outputs = {
+				"beam_symbols":self.beam_symbol_strs,
+				"beam_parents":self.beam_parents,
+				"beam_ends":self.beam_ends,
+				"beam_end_parents":self.beam_end_parents,
+				"beam_end_probs":self.beam_end_probs,
+				"beam_attns":self.beam_attns
+			}
+			return None, inputs, outputs		
 
 	def get_init_ops(self):
 		init_ops = []
@@ -552,7 +530,7 @@ if __name__ == "__main__":
 	#name = "cvae4_1-weibo-stc-bought" 
 
 	#somehow good
-	name = "cvae-128-simpleprior-attn"
+	name = "cvae-simpleprior-reddit-addmem"
 	#name = "cvae-1024-simpleprior-attn"
 	#name = "cvae-1024-simpleprior-attn-addmem"
 	#name = "cvae-1024-prior-attn-addmem"
