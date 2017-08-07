@@ -315,7 +315,6 @@ class CVAERNN(ModelCore):
 		b = tf.get_variable("proj_b", [conf.output_vocab_size], dtype=dtype)
 		self.out_proj = (w, b)
 
-		
 		if not for_deploy: 
 			inputs = {}
 			dec_init_state = zero_attn_states
@@ -544,5 +543,5 @@ if __name__ == "__main__":
 	if len(sys.argv) == 2:
 		gpu = 0
 	flag = sys.argv[1]
-	model(flag)
-	#model(flag, use_seg=False)
+	#model(flag)
+	model(flag, use_seg=False)

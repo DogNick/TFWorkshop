@@ -374,7 +374,8 @@ class ModelCore(object):
 		log.getLogger("train").addHandler(fh)
 		log.getLogger("train").setLevel(log.DEBUG)
 		
-		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
+		#gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
+		gpu_options = tf.GPUOptions(allow_growth=True)
 		sess_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
 									gpu_options=gpu_options, intra_op_parallelism_threads=32)
 
@@ -528,7 +529,8 @@ class ModelCore(object):
 		return
 		
 	def dummy_train(self, gpu=0, create_new=True, train_root="../runtime"):
-		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
+		#gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
+		gpu_options = tf.GPUOptions(allow_growth=True)
 		session_config = tf.ConfigProto(allow_soft_placement=True,
 										log_device_placement=False,
 										gpu_options=gpu_options,
@@ -539,7 +541,7 @@ class ModelCore(object):
 
 		print "Creating Data queue..."
 		path = os.path.join(confs[self.name].data_dir, "train.data")
-		qr = QueueReader(filename_list=[path])
+		qr = QueueReader(filename_list=[path], shared_name="temp_queue")
 		deq_batch_records = qr.batched(batch_size=confs[self.name].batch_size, min_after_dequeue=3)
 		
 		if create_new:
@@ -560,8 +562,7 @@ class ModelCore(object):
 		#sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 		#sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
-		qr.start(session=sess)
-
+		#qr.start(session=sess)
 		print "Dequeue one batch..."
 		batch_records = sess.run(deq_batch_records)
 		N = 10 

@@ -54,12 +54,11 @@ confs["vae-merge-stc-weibo"].stddev               = 3.0
 
 confs["cvae-simpleprior-reddit-addmem"] = copy.deepcopy(confs["vae"])
 confs["cvae-simpleprior-reddit-addmem"].model_kind                    = "CVAERNN"
-confs["cvae-simpleprior-reddit-addmem"].input_vocab_size              = 30000 
+confs["cvae-simpleprior-reddit-addmem"].input_vocab_size              = 30000
 confs["cvae-simpleprior-reddit-addmem"].output_vocab_size             = 30000 
 
 confs["cvae-simpleprior-reddit-addmem"].learning_rate                 = 0.0001
 confs["cvae-simpleprior-reddit-addmem"].num_layers                    = 3 
-
 confs["cvae-simpleprior-reddit-addmem"].embedding_size                = 200 
 confs["cvae-simpleprior-reddit-addmem"].cell_model                    = "GRUCell"
 confs["cvae-simpleprior-reddit-addmem"].num_units                     = 1024 
@@ -68,14 +67,15 @@ confs["cvae-simpleprior-reddit-addmem"].addmem                        = True
 confs["cvae-simpleprior-reddit-addmem"].embedding_init				  = "/search/odin/Nick/GenerateWorkshop/data/SRT-reddit-proced-voca-filtered/pair_proced3_for_w2v.w2v.npy"
 confs["cvae-simpleprior-reddit-addmem"].data_dir                      = "/search/odin/Nick/GenerateWorkshop/data/SRT-reddit-proced-voca-filtered"
 confs["cvae-simpleprior-reddit-addmem"].beam_splits                   = [20,20,20,20,20,20,20,20]#[12,12,12,12,12,12,12]#[5,5,5,1,1,1,1]#[3,3,3,1,1,1] 
-confs["cvae-simpleprior-reddit-addmem"].use_data_queue                = False 
+#confs["cvae-simpleprior-reddit-addmem"].use_data_queue                = False
+confs["cvae-simpleprior-reddit-addmem"].use_data_queue                = True 
 confs["cvae-simpleprior-reddit-addmem"].input_max_len                 = 25 
 confs["cvae-simpleprior-reddit-addmem"].output_max_len                = 30 
 confs["cvae-simpleprior-reddit-addmem"].prior_type                    = "simple"
 confs["cvae-simpleprior-reddit-addmem"].enc_latent_dim                = 128 
 confs["cvae-simpleprior-reddit-addmem"].stddev                        = 1.0
 confs["cvae-simpleprior-reddit-addmem"].kld_ratio                     = 1.0
-confs["cvae-simpleprior-reddit-addmem"].bow_ratio                     = None 
+confs["cvae-simpleprior-reddit-addmem"].bow_ratio                     = 0.0 
 confs["cvae-simpleprior-reddit-addmem"].opt_name					  = "Adam" 
 
 
