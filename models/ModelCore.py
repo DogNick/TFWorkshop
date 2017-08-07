@@ -560,7 +560,7 @@ class ModelCore(object):
 		#sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 		#sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
-		qr.start(session=sess)
+		#qr.start(session=sess)
 
 		print "Dequeue one batch..."
 		batch_records = sess.run(deq_batch_records)

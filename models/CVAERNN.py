@@ -544,5 +544,5 @@ if __name__ == "__main__":
 	if len(sys.argv) == 2:
 		gpu = 0
 	flag = sys.argv[1]
-	model(flag)
-	#model(flag, use_seg=False)
+	#model(flag)
+	model(flag, use_seg=False)
