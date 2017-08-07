@@ -544,7 +544,8 @@ class ModelCore(object):
 		
 		if create_new:
 			ckpt_dir = os.path.join(train_root, "null") 
-			shutil.rmtree(ckpt_dir)
+			if os.path.exists(ckpt_dir):
+				shutil.rmtree(ckpt_dir)
 		else:
 			ckpt_dir = os.path.join(train_root, self.name)
 		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn(),
