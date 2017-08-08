@@ -74,6 +74,31 @@ class ModelCore(object):
 
 	@abc.abstractmethod 
 	def build(self, for_deploy, variants=""):
+		"""build graph in deploy/train way
+
+		build a graph with two seperate graph branches for both training and inference,
+		this function will return a graph_nodes dict in which some specific keys
+		are offered.
+		
+		Params:
+			for_deploy: to specify the current branch to build(train or deploy)
+			variants: a additional specification for model variants,
+		Returns:
+			graph_nodes: a dict with following keys:
+				{
+					"loss":...,
+					"inputs":...,
+					"outputs":...,
+					"debug_outputs":...,
+					"visualize":...
+				}
+				Typically, in training paradigm, loss is required, inputs and outputs are none;
+				While in infer paradigm, loss is none and inputs and outputs are required;
+				visuallize and debug_outputs are always optional.
+				Note that in training paradigm, an 'update' key mapped to a backprop op upon
+				graph_nodes['loss'] will be also added to graph_nodes after this function is
+				called in build_all(...) 
+		"""
 		return
 
 	@abc.abstractmethod
@@ -164,24 +189,16 @@ class ModelCore(object):
 		with tf.device(device):
 			with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
 				graphlg.info("Building main graph...")	
-				loss, inputs, outputs = self.build(for_deploy, variants="")
+				graph_nodes = self.build(for_deploy, variants="")
 				graphlg.info("Collecting trainable params...")
 				self.trainable_params.extend(tf.trainable_variables())
 				if not for_deploy:	
 					graphlg.info("Creating backpropagation graph and optimizers...")
-					update = self.backprop(loss)	
+					graph_nodes["update"] = self.backprop(graph_nodes["loss"])
+					graph_nodes["summary"] = tf.summary.merge_all()
 					self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
-					graph_nodes = {
-						"update":update,
-						"loss":loss,
-						"debug_outputs":outputs,
-						"summary": tf.summary.merge_all()
-					}
-				else:
-					graph_nodes = {
-						"inputs":inputs,
-						"outputs":outputs
-					}
+				if "visualize" not in graph_nodes:
+					graph_nodes["visualize"] = None
 				graphlg.info("Graph done")
 				graphlg.info("")
 
@@ -326,8 +343,8 @@ class ModelCore(object):
 
 	def init_infer(self, gpu="", variants="", ckpt_steps=None, runtime_root="../runtime_root"):
 		core_str = "cpu:0" if (gpu is None or gpu == "") else "/gpu:%d" % int(gpu)
-		self.ckpt_dir = os.path.join(runtime_root, self.name)
-		if not os.path.exists(self.ckpt_dir):
+		ckpt_dir = os.path.join(runtime_root, self.name)
+		if not os.path.exists(ckpt_dir):
 			print ("\n No checkpoint dir found !!! exit")
 			exit(0)
 		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
@@ -339,7 +356,7 @@ class ModelCore(object):
 		#self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 
 		restorer = self.get_restorer()
-		ckpt = tf.train.get_checkpoint_state(self.ckpt_dir, latest_filename=None)
+		ckpt = tf.train.get_checkpoint_state(ckpt_dir, latest_filename=None)
 		filename = None
 		if ckpt_steps:
 			for each in ckpt.all_model_checkpoint_paths:
@@ -352,7 +369,7 @@ class ModelCore(object):
 			ckpt_steps = re.split("\-", filename)[-1]
 			print ("use latest %s as inference model" % ckpt_steps)
 		if filename == None:
-			print ("\n No checkpoint step %s found in %s" % (str(ckpt_steps), self.ckpt_dir))
+			print ("\n No checkpoint step %s found in %s" % (str(ckpt_steps), ckpt_dir))
 			exit(0)
 		restorer.restore(save_path=filename, sess=self.sess)
 		return self.sess, graph_nodes, ckpt_steps
@@ -483,49 +500,54 @@ class ModelCore(object):
 	def get_visual_tensor(self):
 		return None, None
 
-	def visualize(self, gpu=0, records=[]): 
-		visual_vec = self.project()
-		if visual_vec == None:
-			return None, None
-		embedding_var = tf.Variable(0.0, [len(records), visual_vec.get_shape()[1]])
+	def visualize(self, train_root, gpu=0, records=[], ckpt_steps=None): 
 
-		self.initi_infer_sess("../runtime/", gpu="0", variants="")
+		sess, graph_nodes, global_steps = self.init_infer(gpu="0", runtime_root=train_root)
+		if "visualize" not in graph_nodes:
+			print "visualize nodes not found"
+			return
+		visual_tensors = {k:v for k in graph_nodes["visualize"]}
 
-		emb_list = [] 
-		out_list = []
-		for start in range(0, len(records), self.conf.batch_size):
-			batch = records[start:start + self.conf.batch_size]
-			input_feed = self.preproc(examples, use_seg=True, for_deploy=True)
-			outs = session.run([tensor, self.outputs], feed_dict=input_feed)
-			emb_list.append(outs[0])
-			out_list.append(outs[1])
+		ckpt_dir = os.path.join(train_root, self.name)
+		summary_writer = tf.summary.FileWriter(ckpt_dir)
 
-		embs = np.concatenate(emb_list, axis=0)
+		for node_name, tensor in visual_tensors.items():
+			embedding_var = tf.Variable(0.0, [len(records), tf.flattern(tensor).get_shape()[1]])
+			emb_list = [] 
+			out_list = []
+			for start in range(0, len(records), self.conf.batch_size):
+				batch = records[start:start + self.conf.batch_size]
+				input_feed = self.preproc(examples, use_seg=True, for_deploy=True)
+				outs = sess.run([tensor, self.outputs], feed_dict=input_feed)
+				emb_list.append(outs[0])
+				out_list.append(outs[1])
 
-		# may not be used
-		outs = np.concatenate(out_list, axis=0)
+			embs = np.concatenate(emb_list, axis=0)
+			# may not be used
+			outs = np.concatenate(out_list, axis=0)
 
-		model.sess.run(embedding_var.assign(tf.squeeze(embs)))
+			sess.run(embedding_var.assign(tf.squeeze(embs)))
 
-		saver = tf.train.Saver([embedding_var])
-		saver.save(sess, os.path.join(FLAGS.train_root,"%s.embs" % proj_name))
+			saver = tf.train.Saver([embedding_var])
+			saver.save(sess, os.path.join(ckpt_dir,"%s.embs" % node_name))
+			meta_path = os.path.join(ckpt_dir,"%s.tsv" % node_name)
 
-		meta_path = os.path.join(FLAGS.train_root,"%s.tsv" % proj_name)
-		config = projector.ProjectorConfig()
-		embedding = config.embeddings.add()
-		embedding.tensor_name = embedding_var.name 
-		embedding.metadata_path = meta_path 
-		projector.visualize_embeddings(summary_writer, config)
 
-		with codecs.open(meta_path, "w") as f:
-			f.write("Query\tFrequency\n")
-			for i, each in enumerate(outs):
-				each = list(each)
-				if "_EOS" in each:
-					each = each[0:each.index("_EOS")]
-				f.write("%s --> %s\t%d\n" % (records[i], "".join(each), i))
-			#for i, line in enumerate(records):
-			#	f.write("%s\t%d\n" % (line, i))
+			config = projector.ProjectorConfig()
+			embedding = config.embeddings.add()
+			embedding.tensor_name = node_name
+			embedding.metadata_path = meta_path 
+			projector.visualize_embeddings(summary_writer, config)
+
+			with codecs.open(meta_path, "w") as f:
+				f.write("Query\tFrequency\n")
+				for i, each in enumerate(outs):
+					each = list(each)
+					if "_EOS" in each:
+						each = each[0:each.index("_EOS")]
+					f.write("%s --> %s\t%d\n" % (records[i], "".join(each), i))
+				#for i, line in enumerate(records):
+				#	f.write("%s\t%d\n" % (line, i))
 		return
 		
 	def dummy_train(self, gpu=0, create_new=True, train_root="../runtime"):

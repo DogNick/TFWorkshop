@@ -210,6 +210,7 @@ class VAERNN(ModelCore):
 		# Encoder states for initial state, with vae 
 		init_states = []
 		KLDs = tf.zeros([batch_size * self.beam_size])
+		zs = []
 		for i, each in enumerate(self.enc_states):
 		  if isinstance(each, LSTMStateTuple):
 			new_c = tf.reshape(tf.concat([each.c] * self.beam_size, 1), [-1, mem_size])
@@ -218,14 +219,17 @@ class VAERNN(ModelCore):
 			vae_h, KLD, l2 = CreateVAE(new_h, self.conf.enc_latent_dim, stddev=self.conf.stddev, name="vae", reuse=(i!=0))
 			init_states.append(LSTMStateTuple(new_c, vae_h))
 			KLDs += KLD 
+			zs.append(tf.concat([new_c, vae_h], 1))
 		  else:
 			state = tf.reshape(tf.concat([each] * self.beam_size, 1), [-1, mem_size])
 			vae_state, KLD, l2 = CreateVAE(state, self.conf.enc_latent_dim, name="vae", stddev=self.conf.stddev, reuse=(i!=0))
 			init_states.append(vae_state)
 			KLDs += KLD 
+			zs.append(vae_state)
+		z = tf.concat(zs, 1)
 
 		zero_attn_states = DynamicAttentionWrapperState(tuple(init_states), zero_attn_states.attention, zero_attn_states.newmem, zero_attn_states.alignments)
-
+		
 		if not for_deploy: 
 			dec_init_state = zero_attn_states
 			hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, 
@@ -270,8 +274,15 @@ class VAERNN(ModelCore):
 			tf.summary.scalar("loss", see_loss)
 			tf.summary.scalar("kld", KLD)
 
+			graph_nodes = {
+				"loss":self.loss,
+				"inputs":{},
+				"outputs":{},
+				"debug_ouputs":self.outputs
+			}
+
 			#saver
-			return self.loss, {}, self.outputs
+			return graph_nodes 
 		else:
 			inputs = { 
 				"enc_inps:0":self.enc_str_inps,
@@ -288,7 +299,14 @@ class VAERNN(ModelCore):
 				one_hot = tf.one_hot(tf.slice(self.dec_inps, [0, 1], [-1, L]), depth=self.conf.output_vocab_size, axis=-1, on_value=1.0, off_value=0.0)
 				outputs = tf.reduce_sum(cell_outs.logprobs * one_hot, 2)
 				outputs = tf.reduce_sum(outputs, axis=1)
-				return None, inputs, {"logprobs":outputs}
+
+				graph_nodes = {
+					"loss":None,
+					"inputs":inputs,
+					"outputs":{"logprobs":outputs}
+					"visualize":None
+				}
+				return graph_nodes 
 			else:
 				dec_init_state = beam_decoder.BeamState(tf.zeros([batch_size * self.beam_size]), zero_attn_states, tf.zeros([batch_size * self.beam_size], tf.int32))
 				#dec_init_state = nest.map_structure(lambda x:tf.Print(x, [tf.shape(x)], message=str(x)+"dec_init"), dec_init_state)
@@ -345,7 +363,13 @@ class VAERNN(ModelCore):
 					"beam_end_probs":self.beam_end_probs,
 					"beam_attns":self.beam_attns
 				}
-				return None, inputs, outputs
+				graph_nodes = {
+					"loss":None,
+					"inputs":inputs,
+					"outputs":outputs
+					"visualize":{"z":z}
+				}
+				return graph_nodes 
 
 				#cell_outs.alignments
 				#self.outputs = tf.concat([outputs_str, tf.cast(cell_outs.beam_parents, tf.string)], 1)

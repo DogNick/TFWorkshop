@@ -111,8 +111,14 @@ class NickSummaryHook(session_run_hook.SessionRunHook):
 					else:
 						value_str = str(value[idx])
 					trainlg.debug("[%s][%d] %s" % (key, idx, value_str))
-					out_value_str = " ".join(list(out[idx]))
-					trainlg.debug("[OUT][%d] %s" % (idx, out_value_str))
+
+					if isinstance(out, dict):
+						for k, v in out.items():
+							trainlg.debug("[OUT-%s][%d] %s" % (k, idx, " ".join([str(e) for e in v[idx]])))
+					elif isinstance(out, list):
+						trainlg.debug("[OUT][%d] %s" % (idx, " ".join([str(e) for e in out[idx]])))
+							
+							
 				trainlg.debug("")
 			self._timer_debug.update_last_triggered_step(self._global_steps)
 

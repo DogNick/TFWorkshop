@@ -72,6 +72,11 @@
 #sleep 1.0
 #sh job.sh see allattn_dist
 
-sh job.sh create vae-reddit-addmem single 0 1 
+#sh job.sh create vae-reddit-addmem single 0 0 
+#sleep 1.0
+#sh job.sh see vae-reddit-addmem 
+
+
+sh job.sh create cvae-simpleprior-reddit-addmem single 0 1
 sleep 1.0
-sh job.sh see vae-reddit-addmem 
+sh job.sh see cvae-simpleprior-reddit-addmem

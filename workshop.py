@@ -69,11 +69,10 @@ def main(_):
 	# Visualization 
 	if FLAGS.visualize_file != None:
 		visual_name = FLAGS.visualize_name 
-		ckpt_dir = os.path.join(FLAGS.train_root, conf_name)
 		with codecs.open(FLAGS.visualize_file) as f:
 			records = [re.split("\t", line.strip())[0] for line in f]
 		model = create(conf_name, job_type=job_type, task_id=task_id)
-		model.visualize(gpu=gpu, records=records)
+		model.visualize(FLAGS.train_root, gpu=gpu, records=records)
 
 	# Export for deployment
 	elif FLAGS.export == True: 

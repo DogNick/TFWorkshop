@@ -286,13 +286,13 @@ class CVAERNN(ModelCore):
 
 		# project z + x_thinking_state to decoder state
 		decision_layer = layers_core.Dense(mem_size, use_bias=True, name="decide", activation=tf.tanh)
-		thinking_state = decision_layer(thinking_state) 
+		decision_state = decision_layer(thinking_state) 
 
 		# add BOW loss
-		num_hidden_units = int(math.sqrt(conf.output_vocab_size * int(thinking_state.shape[1])))
+		num_hidden_units = int(math.sqrt(conf.output_vocab_size * int(decision_state.shape[1])))
 		bow_l1 = layers_core.Dense(num_hidden_units, use_bias=True, name="bow_hidden", activation=tf.tanh)
 		bow_l2 = layers_core.Dense(conf.output_vocab_size, use_bias=True, name="bow_out", activation=tf.tanh)
-		bow = bow_l2(bow_l1(thinking_state)) 
+		bow = bow_l2(bow_l1(decision_state)) 
 
 		y_dec_inps = tf.slice(self.dec_inps, [0, 1], [-1, -1])
 		bow_y = tf.reduce_sum(tf.one_hot(y_dec_inps, on_value=1.0, off_value=0.0, axis=-1, depth=conf.output_vocab_size), axis=1)
@@ -304,7 +304,7 @@ class CVAERNN(ModelCore):
 						keep_prob=1.0, dtype=tf.float32)
 
 		# Fit decision states to shape of attention decoder cell states 
-		zero_attn_states = DecStateInit(thinking_state, mem_size, cell, batch_size, self.beam_size)
+		zero_attn_states = DecStateInit(decision_state, mem_size, cell, batch_size, self.beam_size)
 		
 		# Output projection
 		graphlg.info("Creating out_proj...") 
@@ -364,10 +364,16 @@ class CVAERNN(ModelCore):
 				tf.summary.scalar("kld", KLD) 
 			if conf.bow_ratio:
 				self.loss += conf.bow_ratio * bow_loss 
-				tf.summary.scalar("kld", KLD) 
 				tf.summary.scalar("bow", bow_loss)
 
-			return self.loss, inputs, {"outputs":self.outputs}
+			graph_nodes = {
+				"loss":self.loss,
+				"inputs":inputs,
+				"debug_outputs":self.outputs,
+				"outputs":None
+				"visualize":None
+			}
+			return graph_nodes
 		else:
 			hp_infer = helper.GreedyEmbeddingHelper(embedding=self.embedding,
 													start_tokens=tf.ones(shape=[batch_size * self.beam_size], dtype=tf.int32),
@@ -456,7 +462,18 @@ class CVAERNN(ModelCore):
 				"beam_end_probs":self.beam_end_probs,
 				"beam_attns":self.beam_attns
 			}
-			return None, inputs, outputs		
+
+			graph_nodes = {
+				"loss":None,
+				"inputs":inputs,
+				"outputs":outputs,
+				"visualize":{
+					"thinking":thinking_state,
+					"decision":decision_state
+				}
+			}
+
+			return graph_nodes
 
 	def get_init_ops(self):
 		init_ops = []
