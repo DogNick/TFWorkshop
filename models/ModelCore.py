@@ -133,16 +133,17 @@ class ModelCore(object):
 		inputs = {k:utils.build_tensor_info(v) for k, v in nodes["inputs"].items()}
 		outputs = {k:utils.build_tensor_info(v) for k, v in nodes["outputs"].items()}
 
-		signature_def = signature_def_utils.build_signature_def(inputs=inputs, outputs=outputs, 
-																method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)
+		signature_def = signature_def_utils.build_signature_def(inputs=inputs,
+				outputs=outputs, 
+				method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)
 		
 		builder = saved_model_builder.SavedModelBuilder(export_dir)
 		builder.add_meta_graph_and_variables(sess,
-											[tag_constants.SERVING],
-											signature_def_map={
-													signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:signature_def
-												}
-											)
+				[tag_constants.SERVING],
+				signature_def_map={
+						signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:signature_def
+					}
+				)
 		builder.save()
 		print('Exporting trained model to %s' % export_dir)
 		return
