@@ -1,5 +1,5 @@
 from __future__ import absolute_import
-from __future__ import print_function 
+#from __future__ import print_function 
 from __future__ import division
 
 import re
@@ -63,14 +63,13 @@ def main(_):
 	job_type = FLAGS.job_type
 	task_id = FLAGS.task_id
 	conf_name = FLAGS.conf_name
-	ckpt_dir = os.path.join(FLAGS.train_root, conf_name)
 	gpu = FLAGS.gpu
 
 	# Visualization 
 	if FLAGS.visualize_file != None:
-		visual_name = FLAGS.visualize_name 
+		print "Reading data..."
 		with codecs.open(FLAGS.visualize_file) as f:
-			records = [re.split("\t", line.strip())[0] for line in f]
+			records = [re.split("\t", f.next().strip())[0] for i in range(1000)]
 		model = create(conf_name, job_type=job_type, task_id=task_id)
 		model.visualize(FLAGS.train_root, gpu=gpu, records=records)
 

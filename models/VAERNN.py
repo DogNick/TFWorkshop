@@ -213,19 +213,23 @@ class VAERNN(ModelCore):
 		zs = []
 		for i, each in enumerate(self.enc_states):
 		  if isinstance(each, LSTMStateTuple):
-			new_c = tf.reshape(tf.concat([each.c] * self.beam_size, 1), [-1, mem_size])
-			new_h = tf.reshape(tf.concat([each.h] * self.beam_size, 1), [-1, mem_size])
+			#new_c = tf.reshape(tf.concat([each.c] * self.beam_size, 1), [-1, mem_size])
+			#new_h = tf.reshape(tf.concat([each.h] * self.beam_size, 1), [-1, mem_size])
 			#vae_c, KLD_c, l2_c = CreateVAE(new_c, self.conf.enc_latent_dim)
-			vae_h, KLD, l2 = CreateVAE(new_h, self.conf.enc_latent_dim, stddev=self.conf.stddev, name="vae", reuse=(i!=0))
+			#vae_h, KLD, l2 = CreateVAE(new_h, self.conf.enc_latent_dim, stddev=self.conf.stddev, name="vae", reuse=(i!=0))
+			vae_h, KLD, l2 = CreateVAE(each.h, self.conf.enc_latent_dim, stddev=self.conf.stddev, name="vae", reuse=(i!=0))
+			zs.append(tf.concat([new_c, vae_h], 1))
+
+			beam_vea_h = tf.reshape(tf.tile(vae_h, [1, self.beam_size], [-1, mem_size]))
+			new_c = tf.reshape(tf.tile(each.c, [1, self.beam_size], [-1, mem_size]))
 			init_states.append(LSTMStateTuple(new_c, vae_h))
 			KLDs += KLD 
-			zs.append(tf.concat([new_c, vae_h], 1))
 		  else:
+			zs.append(each)
 			state = tf.reshape(tf.concat([each] * self.beam_size, 1), [-1, mem_size])
 			vae_state, KLD, l2 = CreateVAE(state, self.conf.enc_latent_dim, name="vae", stddev=self.conf.stddev, reuse=(i!=0))
 			init_states.append(vae_state)
 			KLDs += KLD 
-			zs.append(vae_state)
 		z = tf.concat(zs, 1)
 
 		zero_attn_states = DynamicAttentionWrapperState(tuple(init_states), zero_attn_states.attention, zero_attn_states.newmem, zero_attn_states.alignments)
@@ -303,7 +307,7 @@ class VAERNN(ModelCore):
 				graph_nodes = {
 					"loss":None,
 					"inputs":inputs,
-					"outputs":{"logprobs":outputs}
+					"outputs":{"logprobs":outputs},
 					"visualize":None
 				}
 				return graph_nodes 
@@ -366,7 +370,7 @@ class VAERNN(ModelCore):
 				graph_nodes = {
 					"loss":None,
 					"inputs":inputs,
-					"outputs":outputs
+					"outputs":outputs,
 					"visualize":{"z":z}
 				}
 				return graph_nodes 
@@ -429,8 +433,8 @@ class VAERNN(ModelCore):
 			name = each.name
 			#name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
 			#name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
-			name = re.sub("gru_cell/bias", "gru_cell/biases", name)
-			name = re.sub("gru_cell/kernel", "gru_cell/weights", name)
+			#name = re.sub("gru_cell/bias", "gru_cell/biases", name)
+			#name = re.sub("gru_cell/kernel", "gru_cell/weights", name)
 			#name = re.sub("gates/bias", "gates/biases", name)
 			#name = re.sub("candidate/bias", "candidate/biases", name)
 			#name = re.sub("gates/kernel", "gates/weights", name)
@@ -476,6 +480,8 @@ if __name__ == "__main__":
 	model = VAERNN(name)
 	if len(sys.argv) == 2:
 		gpu = 0
+	else:
+		gpu = int(sys.argv[2])
 	flag = sys.argv[1]
-	#model(flag, False)
-	model(flag, True)
+	model(flag, False)
+	#model(flag, True, gpu)

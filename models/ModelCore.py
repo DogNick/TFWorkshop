@@ -23,6 +23,7 @@ from tensorflow.python.saved_model import signature_def_utils
 from tensorflow.python.saved_model import tag_constants
 from tensorflow.python.saved_model import utils
 from tensorflow.contrib.layers.python.layers.embedding_ops import embedding_lookup_unique
+from tensorflow.contrib.tensorboard.plugins import projector
 
 from nick_tf import score_decoder 
 from nick_tf import helper
@@ -345,6 +346,7 @@ class ModelCore(object):
 	def init_infer(self, gpu="", variants="", ckpt_steps=None, runtime_root="../runtime_root"):
 		core_str = "cpu:0" if (gpu is None or gpu == "") else "/gpu:%d" % int(gpu)
 		ckpt_dir = os.path.join(runtime_root, self.name)
+		print ckpt_dir
 		if not os.path.exists(ckpt_dir):
 			print ("\n No checkpoint dir found !!! exit")
 			exit(0)
@@ -502,53 +504,70 @@ class ModelCore(object):
 		return None, None
 
 	def visualize(self, train_root, gpu=0, records=[], ckpt_steps=None): 
+		sess, graph_nodes, global_steps = self.init_infer(gpu=gpu, variants="", ckpt_steps=None, runtime_root=train_root)
 
-		sess, graph_nodes, global_steps = self.init_infer(gpu="0", runtime_root=train_root)
 		if "visualize" not in graph_nodes:
 			print "visualize nodes not found"
 			return
-		visual_tensors = {k:v for k in graph_nodes["visualize"]}
+
+		# tf variables and temp variables to hold embs
+		embs = {}
+		emb_vars = {}
+		for start in range(0, len(records), self.conf.batch_size):
+			print "Runing examples %d - %d..." % (start, start + self.conf.batch_size)
+			batch = records[start:start + self.conf.batch_size]
+			input_feed = self.preproc(batch, use_seg=False, for_deploy=True)
+			#visuals, outputs = sess.run([graph_nodes["visualize"], graph_nodes["outputs"]], feed_dict=input_feed)
+			visuals = sess.run(graph_nodes["visualize"], feed_dict=input_feed)
+			for k, v in visuals.items():
+				if k not in embs:
+					embs[k] = []
+				embs[k].append(v)
+		for k,v in graph_nodes["visualize"].items():
+			dim_size = int(tf.contrib.layers.flatten(v).get_shape()[1])
+			emb_vars[k] = tf.Variable(tf.random_normal([len(records), dim_size]), name=k)
 
 		ckpt_dir = os.path.join(train_root, self.name)
-		summary_writer = tf.summary.FileWriter(ckpt_dir)
-
-		for node_name, tensor in visual_tensors.items():
-			embedding_var = tf.Variable(0.0, [len(records), tf.flattern(tensor).get_shape()[1]])
-			emb_list = [] 
-			out_list = []
-			for start in range(0, len(records), self.conf.batch_size):
-				batch = records[start:start + self.conf.batch_size]
-				input_feed = self.preproc(examples, use_seg=True, for_deploy=True)
-				outs = sess.run([tensor, self.outputs], feed_dict=input_feed)
-				emb_list.append(outs[0])
-				out_list.append(outs[1])
-
-			embs = np.concatenate(emb_list, axis=0)
-			# may not be used
-			outs = np.concatenate(out_list, axis=0)
-
-			sess.run(embedding_var.assign(tf.squeeze(embs)))
-
-			saver = tf.train.Saver([embedding_var])
-			saver.save(sess, os.path.join(ckpt_dir,"%s.embs" % node_name))
-			meta_path = os.path.join(ckpt_dir,"%s.tsv" % node_name)
+		#emb_dir = ckpt_dir + "-embs" 
+		emb_dir = os.path.join(ckpt_dir, "embeddings")
+		#meta_path = os.path.join(ckpt_dir, "metadata.tsv")
+		#meta_path = os.path.join(train_root, "metadata.tsv")
 
 
-			config = projector.ProjectorConfig()
+		# do embedding
+		meta_path = os.path.join(emb_dir, "metadata.tsv")
+		config = projector.ProjectorConfig()
+		#summary_writer = tf.summary.FileWriter(os.path.join(train_root, self.name))
+		summary_writer = tf.summary.FileWriter(emb_dir, sess.graph)
+		print "all keys: %s" % str(embs.keys())
+		for node_name, emb_list in embs.items():
+			print "Embedding %s..." % node_name
+			## may not be used
+			#outs = np.concatenate(out_list, axis=0)
+			sess.run(emb_vars[node_name].assign(np.concatenate(emb_list, axis=0)))
+
 			embedding = config.embeddings.add()
-			embedding.tensor_name = node_name
+			embedding.tensor_name = emb_vars[node_name].name 
 			embedding.metadata_path = meta_path 
-			projector.visualize_embeddings(summary_writer, config)
 
-			with codecs.open(meta_path, "w") as f:
-				f.write("Query\tFrequency\n")
-				for i, each in enumerate(outs):
-					each = list(each)
-					if "_EOS" in each:
-						each = each[0:each.index("_EOS")]
-					f.write("%s --> %s\t%d\n" % (records[i], "".join(each), i))
-				#for i, line in enumerate(records):
-				#	f.write("%s\t%d\n" % (line, i))
+		#saver = tf.train.Saver(emb_vars.values())
+		saver = tf.train.Saver(emb_vars.values())
+		#saver.save(sess, os.path.join(ckpt_dir, "embeddings"), 0)
+		#saver.save(sess, os.path.join(train_root, "embs"), 0)
+		saver.save(sess, os.path.join(emb_dir, "embs.ckpt"), 0)
+		projector.visualize_embeddings(summary_writer, config)
+
+		# writing metadata
+		print "Writing meta data %s..." % meta_path
+		with codecs.open(meta_path, "w") as f:
+			f.write("Query\tFrequency\n")
+			#for i, each in enumerate(outs):
+			#	each = list(each)
+			#	if "_EOS" in each:
+			#		each = each[0:each.index("_EOS")]
+			#	f.write("%s --> %s\t%d\n" % (records[i], "".join(each), i))
+			for i, line in enumerate(records):
+				f.write("%s\t%d\n" % (line, i))
 		return
 		
 	def dummy_train(self, gpu=0, create_new=True, train_root="../runtime"):

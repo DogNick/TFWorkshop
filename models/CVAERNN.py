@@ -370,7 +370,7 @@ class CVAERNN(ModelCore):
 				"loss":self.loss,
 				"inputs":inputs,
 				"debug_outputs":self.outputs,
-				"outputs":None
+				"outputs":None,
 				"visualize":None
 			}
 			return graph_nodes
