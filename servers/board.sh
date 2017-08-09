@@ -7,4 +7,4 @@ else
 fi
 
 ps aux | grep tensorboard | grep -v grep | awk '{print $2}' | xargs -t -I {} kill -9 {}''
-nohup tensorboard --logdir=/search/odin/Nick/GenerateWorkshop/runtime 2>&1 > logs/board.log &
+nohup tensorboard --logdir=/search/odin/Nick/GenerateWorkshop/runtime --debug 2>&1 > logs/board.log &

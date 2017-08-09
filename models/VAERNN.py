@@ -213,15 +213,15 @@ class VAERNN(ModelCore):
 		zs = []
 		for i, each in enumerate(self.enc_states):
 		  if isinstance(each, LSTMStateTuple):
-			#new_c = tf.reshape(tf.concat([each.c] * self.beam_size, 1), [-1, mem_size])
-			#new_h = tf.reshape(tf.concat([each.h] * self.beam_size, 1), [-1, mem_size])
+			new_c = tf.reshape(tf.concat([each.c] * self.beam_size, 1), [-1, mem_size])
+			new_h = tf.reshape(tf.concat([each.h] * self.beam_size, 1), [-1, mem_size])
 			#vae_c, KLD_c, l2_c = CreateVAE(new_c, self.conf.enc_latent_dim)
-			#vae_h, KLD, l2 = CreateVAE(new_h, self.conf.enc_latent_dim, stddev=self.conf.stddev, name="vae", reuse=(i!=0))
-			vae_h, KLD, l2 = CreateVAE(each.h, self.conf.enc_latent_dim, stddev=self.conf.stddev, name="vae", reuse=(i!=0))
-			zs.append(tf.concat([new_c, vae_h], 1))
+			vae_h, KLD, l2 = CreateVAE(new_h, self.conf.enc_latent_dim, stddev=self.conf.stddev, name="vae", reuse=(i!=0))
+			#vae_h, KLD, l2 = CreateVAE(each.h, self.conf.enc_latent_dim, stddev=self.conf.stddev, name="vae", reuse=(i!=0))
+			zs.append(tf.concat([each.c, vae_h], 1))
 
-			beam_vea_h = tf.reshape(tf.tile(vae_h, [1, self.beam_size], [-1, mem_size]))
-			new_c = tf.reshape(tf.tile(each.c, [1, self.beam_size], [-1, mem_size]))
+			beam_vea_h = tf.reshape(tf.tile(vae_h, [1, self.beam_size]), [-1, mem_size])
+			new_c = tf.reshape(tf.tile(each.c, [1, self.beam_size]), [-1, mem_size])
 			init_states.append(LSTMStateTuple(new_c, vae_h))
 			KLDs += KLD 
 		  else:
@@ -431,8 +431,8 @@ class VAERNN(ModelCore):
 		var_map = {}
 		for each in var_list:
 			name = each.name
-			#name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
-			#name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
+			name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
+			name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
 			#name = re.sub("gru_cell/bias", "gru_cell/biases", name)
 			#name = re.sub("gru_cell/kernel", "gru_cell/weights", name)
 			#name = re.sub("gates/bias", "gates/biases", name)
@@ -442,7 +442,7 @@ class VAERNN(ModelCore):
 			#name = re.sub("bias", "biases", name)
 			#name = re.sub("dense/weights", "dense/kernel", name)
 			#name = re.sub("dense/biases", "dense/bias", name)
-			#name = re.sub(":0", "", name)
+			name = re.sub(":0", "", name)
 			var_map[name] = each
 
 		restorer = tf.train.Saver(var_list=var_map)
@@ -474,8 +474,8 @@ class VAERNN(ModelCore):
 
 if __name__ == "__main__":
 	#name = "vae-merge-stc-weibo" 
-	#name = "vae-1024-attn-addmem"
-	name = "vae-reddit-addmem"
+	name = "vae-1024-attn-addmem"
+	#name = "vae-reddit-addmem"
 	#name = "vae-bi-1024-attn-addmem-poem"
 	model = VAERNN(name)
 	if len(sys.argv) == 2:
@@ -483,5 +483,5 @@ if __name__ == "__main__":
 	else:
 		gpu = int(sys.argv[2])
 	flag = sys.argv[1]
-	model(flag, False)
-	#model(flag, True, gpu)
+	#model(flag, False)
+	model(flag, True, gpu)

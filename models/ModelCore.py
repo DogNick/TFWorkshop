@@ -548,7 +548,7 @@ class ModelCore(object):
 
 			embedding = config.embeddings.add()
 			embedding.tensor_name = emb_vars[node_name].name 
-			embedding.metadata_path = meta_path 
+			embedding.metadata_path =  "metadata.tsv" 
 
 		#saver = tf.train.Saver(emb_vars.values())
 		saver = tf.train.Saver(emb_vars.values())
@@ -567,7 +567,7 @@ class ModelCore(object):
 			#		each = each[0:each.index("_EOS")]
 			#	f.write("%s --> %s\t%d\n" % (records[i], "".join(each), i))
 			for i, line in enumerate(records):
-				f.write("%s\t%d\n" % (line, i))
+				f.write("%s\t%d\n" % (line, 1))
 		return
 		
 	def dummy_train(self, gpu=0, create_new=True, train_root="../runtime"):
