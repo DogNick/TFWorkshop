@@ -165,7 +165,5 @@ class ScoreDecoder(decoder.Decoder):
           state=cell_state,
           sample_ids=sample_ids)
 
-
-      
     outputs = ScoreDecoderOutput(logprobs)
     return (outputs, next_state, next_inputs, finished)

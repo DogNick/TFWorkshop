@@ -113,12 +113,11 @@ then
         touch $TRAIN_DIR/"train_"$JOB_TYPE"_"$INDEX".log"
         touch $TRAIN_DIR/"graph_"$JOB_TYPE"_"$INDEX".log"
         touch $TRAIN_DIR/"std_"$JOB_TYPE"_"$INDEX".log"
-        CUDA_VISIBLE_DEVICES=$GPU nohup python -u workshop.py --job_type=$JOB_TYPE --task_id=$INDEX --gpu=$GPU --train_root=$TRAIN_ROOT --conf_name=$RUNTIME_NAME --debug  2>&1 > $TRAIN_DIR/"std_"$JOB_TYPE"_"$INDEX".log" & 
+        CUDA_VISIBLE_DEVICES=$GPU nohup python -u workshop.py --cmd=train --job_type=$JOB_TYPE --task_id=$INDEX --gpu=$GPU --train_root=$TRAIN_ROOT --conf_name=$RUNTIME_NAME 2>&1 > $TRAIN_DIR/"std_"$JOB_TYPE"_"$INDEX".log" & 
 
         TIME=`date "+%Y-%m-%d %T"`
         echo $! | xargs -I {} echo -e $JOB_TYPE"_"$INDEX"\t"{}"\t"$DATA_DIR"\t"$TIME  >> $TRAIN_DIR/status
         #$TRAIN_DIR/log_$JOB_TYPE"_"$INDEX &
-        
         #TIME=`date "+%Y-%m-%d %T"`
         #vocab_size=`head -1 $DATA_DIR/statistics | awk '{print $3}'`
         # echo $! | xargs -I {} echo -e $JOB_TYPE"\t"{}"\t"$DATA_DIR"("$vocab_size")\tgpu="$GPU"\t"$TIME >> $TRAIN_DIR/status
@@ -228,20 +227,30 @@ then
         echo "See model's job log:"
         echo "    sh "$0" see [model_name] [job_type]"
     fi
-elif [ "$1"x = "board"x ]
-then
-    ps aux | grep tensorboard | grep -v grep | awk '{print $2}' | xargs -t -I {} kill -9 {}
-    nohup tensorboard --logdir=$TRAIN_ROOT 2>&1 > board.log &
-    tail -f board.log
-elif [ "$1"x = "export"x ]
-then
-    CONF_NAME=$2
-    echo "exporting $CONF_NAME..."
-    python workshop.py --export=True --conf_name=$CONF_NAME --train_root=runtime
 elif [ "$1"x = "export_schedule"x ]
 then
     SERVICE=$2
     SCHEDULE=$3
     echo "exporting schedule $SERVICE $SCHEDULE ..."
-    python workshop.py --export=True --service=$SERVICE --schedule=$SCHEDULE --train_root=runtime
+    python workshop.py --cmd=export --service=$SERVICE --schedule=$SCHEDULE --train_root=$TRAIN_ROOT
+else:
+elif [ "$1"x = "dummytrain"x ]
+then
+    RUNTIME_NAME=$2
+    GPU=$3
+    echo "Dummy Train for $RUNTIME_NAME on $GPU ..."
+    python workshop.py --cmd=dummytrain --conf_name=$RUNTIME_NAME --gpu=$GPU --train_root=$TRAIN_ROOT
+elif [ "$1"x = "test"x ]
+then
+    RUNTIME_NAME=$2
+    GPU=$3
+    echo "Test for $RUNTIME_NAME on $GPU ..."
+    python workshop.py --cmd=test --conf_name=$RUNTIME_NAME --gpu=$GPU --train_root=$TRAIN_ROOT
+elif [ "$1"x = "visualize"x ]
+then
+    RUNTIME_NAME=$2
+    VISUAL_DATA=$3
+	GPU=$4
+    echo "Visualization for $RUNTIME_NAME form data $VISUAL_DATA ..."
+    python workshop.py --cmd=visualize --conf_name=$RUNTIME_NAME --gpu=$GPU --visualize_file=$VISUAL_DATA --train_root=$TRAIN_ROOT
 fi

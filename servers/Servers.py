@@ -46,6 +46,7 @@ serverlg = logging.getLogger("")
 from DeepMatchHandler import *
 from GenerateHandler import *
 from PoemHandler import *
+from IntentHandler import * 
 
 
 def main():
@@ -113,7 +114,7 @@ def main():
 			"generate": GenerateHandler,
 			"matchpoem": MatchPoemHandler,
 			"judgepoem": JudgePoemHandler,
-			"intent": ModelHandler
+			"intent": IntentHandler
 	}
 
 	# start front servers 

@@ -4,7 +4,7 @@ import datetime
 import pickle
 import numpy as np
 import tensorflow as tf
-from sklearn import metrics
+#from sklearn import metrics
 from word_seg.tencent_segment import *
 #from gensim.models.keyedvectors import KeyedVectors
 #from KimCNNLayer import KimCNNLayer
@@ -17,6 +17,7 @@ class KimCNN(object):
 		self.pad_word = '<PADDINGWORD/>'
 		self.input_x_name = 'input_x'
 		self.output_prob_name = 'prob'
+		self.name = name
 	
 	def get_dataset(self, train_set, dev_set):
 		self.train_set = train_set
@@ -238,10 +239,10 @@ class KimCNN(object):
 			query_seg = query_seg[0:self.text_len]
 		return query_seg
 
-	def preproc(self, queries, use_seg=True):
+	def preproc(self, queries, use_seg=True, for_deploy=True):
 		# seg: format as [['how','are'], ['who', 'are','you']]
 		if use_seg:
-			queries = [seg_return_string(q).decode('gbk').encode('utf-8') for q in queries]
+			queries = [seg_return_string(q.decode("utf-8")).decode('gbk').encode('utf-8') for q in queries]
 		queries_seg = [q.split() for q in queries]
 		# pad
 		queries_seg_pad = [self.query_pad(q) for q in queries_seg]
@@ -255,9 +256,9 @@ class KimCNN(object):
 		probs = output[self.output_prob_name]
 		preds = np.asarray([prob[1] > (1.0-neg_confidence_threshold) for prob in probs], dtype=np.int32)
 		out_after_proc = {
-			'tags' : preds,
-			'probs' : probs,
-			'neg_confidence_threshold' : neg_confidence_threshold
+			'tags' : list(preds),
+			#'probs' : list(probs),
+			'neg_confidence_threshold' : str(neg_confidence_threshold)
 		}
 		return out_after_proc
 

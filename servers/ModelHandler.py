@@ -74,8 +74,27 @@ class ModelHandler(tornado.web.RequestHandler):
 		schedule[conf_name]["graph_stub"] = (graph, stub) 
 
 	@abc.abstractmethod
-	def handle(self):  
-		return
+	def handle(self): 
+		query = self.get_argument('query', None)
+		if not query:
+			ret = {}
+			ret["status"] = "missing params"
+			serverlg.info('[chatbot] [ERROR: missing params] [REQUEST] [%s] [%s]' % (time.strftime('%Y-%m-%d %H:%M:%S'), self.request.uri))
+			self.write(json.dumps(ret, ensure_ascii=False))
+			self.finish()
+		results = []
+		debug_infos = []
+		 
+		graph_stubs = [schedule[name]["graph_stub"] for name in schedule]
+		model_names = [name for name in schedule]
+		# Multi model compatible, but here just one model exists
+		multi_models = []
+		for graph, stub in graph_stubs:
+			multi_models.append(self.run_model(graph, stub, [query.encode("utf-8")]))
+		outs = yield multi(multi_models)
+		serverlg.info(outs)
+			
+		raise gen.Return(None)	
 
 	@abc.abstractmethod
 	def form_multi_results(self, model_name, model_out): 

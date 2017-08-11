@@ -121,11 +121,10 @@ class ModelCore(object):
 		return
 	
 	@abc.abstractmethod
-	def export(self, conf_name, runtime_root="../runtime", deploy_dir="deployments", ckpt_steps=None, variants=""):
-		sess, nodes, global_steps = self.init_infer(gpu="0", variants=variants, ckpt_steps=ckpt_steps, runtime_root=runtime_root)
+	def export(self, sess, nodes, version, deploy_dir="deployments", ckpt_steps=None, variants=""):
 
 		# global steps as version
-		export_dir = os.path.join(os.path.join(deploy_dir, conf_name), str(global_steps))
+		export_dir = os.path.join(os.path.join(deploy_dir, self.name), str(version))
 
 		if os.path.exists(export_dir):
 			print("Removing duplicate: %s" % export_dir)
@@ -189,20 +188,20 @@ class ModelCore(object):
 
 	def build_all(self, for_deploy, variants="", device="/cpu:0"):
 		with tf.device(device):
-			#with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
-			graphlg.info("Building main graph...")	
-			graph_nodes = self.build(for_deploy, variants="")
-			graphlg.info("Collecting trainable params...")
-			self.trainable_params.extend(tf.trainable_variables())
-			if not for_deploy:	
-				graphlg.info("Creating backpropagation graph and optimizers...")
-				graph_nodes["update"] = self.backprop(graph_nodes["loss"])
-				graph_nodes["summary"] = tf.summary.merge_all()
-				self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
-			if "visualize" not in graph_nodes:
-				graph_nodes["visualize"] = None
-			graphlg.info("Graph done")
-			graphlg.info("")
+			with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
+				graphlg.info("Building main graph...")	
+				graph_nodes = self.build(for_deploy, variants="")
+				graphlg.info("Collecting trainable params...")
+				self.trainable_params.extend(tf.trainable_variables())
+				if not for_deploy:	
+					graphlg.info("Creating backpropagation graph and optimizers...")
+					graph_nodes["update"] = self.backprop(graph_nodes["loss"])
+					graph_nodes["summary"] = tf.summary.merge_all()
+					self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
+				if "visualize" not in graph_nodes:
+					graph_nodes["visualize"] = None
+				graphlg.info("Graph done")
+				graphlg.info("")
 
 		# More log info about device placement and params memory
 		devices = {}
@@ -233,15 +232,16 @@ class ModelCore(object):
 		conf = self.conf
 		dtype = self.dtype
 		#with tf.variable_scope(self.model_kind) as scope:
-		with tf.name_scope("backprop") as scope:
-			self.learning_rate = tf.Variable(float(conf.learning_rate),
-									trainable=False, name="learning_rate")
-			self.learning_rate_decay_op = self.learning_rate.assign(
-						self.learning_rate * conf.learning_rate_decay_factor)
-			self.global_step = tf.Variable(0, trainable=False, name="global_step")
-			self.data_idx = tf.Variable(0, trainable=False, name="data_idx")
-			self.data_idx_inc_op = self.data_idx.assign(self.data_idx + conf.batch_size)
 
+		self.learning_rate = tf.Variable(float(conf.learning_rate),
+								trainable=False, name="learning_rate")
+		self.learning_rate_decay_op = self.learning_rate.assign(
+					self.learning_rate * conf.learning_rate_decay_factor)
+
+		self.global_step = tf.Variable(0, trainable=False, name="global_step")
+		self.data_idx = tf.Variable(0, trainable=False, name="data_idx")
+		self.data_idx_inc_op = self.data_idx.assign(self.data_idx + conf.batch_size)
+		with tf.name_scope("backprop") as scope:
 			self.optimizers = {
 				"SGD":tf.train.GradientDescentOptimizer(self.learning_rate),
 				"Adadelta":tf.train.AdadeltaOptimizer(self.learning_rate),
@@ -322,176 +322,16 @@ class ModelCore(object):
 				batch_dec_lens.append(np.int32(dec_len))
 				batch_down_wgts.append(down_wgts)
 		self.curr_input_feed = feed_dict = {
-			"inputs/enc_inps:0": batch_enc_inps,
-			"inputs/enc_lens:0": batch_enc_lens,
-			"inputs/dec_inps:0": batch_dec_inps,
-			"inputs/dec_lens:0": batch_dec_lens,
-			"inputs/down_wgts:0": batch_down_wgts
+			"VAERNN/enc_inps:0": batch_enc_inps,
+			"VAERNN/enc_lens:0": batch_enc_lens,
+			"VAERNN/dec_inps:0": batch_dec_inps,
+			"VAERNN/dec_lens:0": batch_dec_lens,
+			"VAERNN/down_wgts:0": batch_down_wgts
 		}
 		for k, v in feed_dict.items():
 			if not v: 
 				del feed_dict[k]
 		return feed_dict
-
-	def join_param_server(self):
-		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
-		session_config = tf.ConfigProto(allow_soft_placement=True,
-									log_device_placement=False,
-									gpu_options=gpu_options,
-									intra_op_parallelism_threads=32)
-		server = tf.train.Server(self.conf.cluster, job_name=self.job_type,
-								task_index=self.task_id, config=session_config, protocol="grpc+verbs")
-		trainlg.info("ps join...")
-		server.join()
-
-	def init_infer(self, gpu="", variants="", ckpt_steps=None, runtime_root="../runtime_root"):
-		core_str = "cpu:0" if (gpu is None or gpu == "") else "/gpu:%d" % int(gpu)
-		ckpt_dir = os.path.join(runtime_root, self.name)
-		print ckpt_dir
-		if not os.path.exists(ckpt_dir):
-			print ("\n No checkpoint dir found !!! exit")
-			exit(0)
-		gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
-		session_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
-									gpu_options=gpu_options, intra_op_parallelism_threads=32)
-		graph_nodes = self.build_all(for_deploy=True, variants=variants, device=core_str)
-		self.sess = tf.Session(config=session_config)
-		#self.sess = tf.InteractiveSession(config=session_config)
-		#self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
-
-		restorer = self.get_restorer()
-		ckpt = tf.train.get_checkpoint_state(ckpt_dir, latest_filename=None)
-		filename = None
-		if ckpt_steps:
-			for each in ckpt.all_model_checkpoint_paths:
-				seged = re.split("\-", each)	
-				if str(ckpt_steps) == seged[-1]:
-					filename = each
-					break
-		else:
-			filename = ckpt.model_checkpoint_path
-			ckpt_steps = re.split("\-", filename)[-1]
-			print ("use latest %s as inference model" % ckpt_steps)
-		if filename == None:
-			print ("\n No checkpoint step %s found in %s" % (str(ckpt_steps), ckpt_dir))
-			exit(0)
-		restorer.restore(save_path=filename, sess=self.sess)
-		return self.sess, graph_nodes, ckpt_steps
-
-	def init_monitored_train(self, runtime_root, gpu=""):  
-		self.ckpt_dir = os.path.join(runtime_root, self.name)
-		if not os.path.exists(self.ckpt_dir):
-			os.mkdir(self.ckpt_dir)
-
-		# create graph logger
-		fh = log.FileHandler(os.path.join(self.ckpt_dir, "graph_%s_%d.log" % (self.job_type, self.task_id)))
-		fh.setFormatter(log.Formatter('[%(asctime)s][%(name)s][%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S"))
-		log.getLogger("graph").addHandler(fh)
-		log.getLogger("graph").setLevel(log.DEBUG) 
-
-		# create training logger
-		fh = log.FileHandler(os.path.join(self.ckpt_dir, "train_%s_%d.log" % (self.job_type, self.task_id)))
-		fh.setFormatter(log.Formatter('[%(asctime)s][%(name)s][%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S"))
-		log.getLogger("train").addHandler(fh)
-		log.getLogger("train").setLevel(log.DEBUG)
-		
-		#gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
-		gpu_options = tf.GPUOptions(allow_growth=True)
-		sess_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
-									gpu_options=gpu_options, intra_op_parallelism_threads=32)
-
-		# handle device placement for both single and distributed method
-		core_str = "cpu:0" if (gpu is None or gpu == "") else "gpu:%d" % int(gpu)
-		if self.job_type == "worker":
-			def _load_fn(unused_op):
-				return 1
-			ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(3,_load_fn)
-			device = tf.train.replica_device_setter(cluster=self.conf.cluster,
-							worker_device='job:worker/task:%d/%s' % (self.task_id, core_str),
-							ps_device='job:ps/task:%d/cpu:0' % self.task_id,
-							ps_strategy=ps_strategy)
-			queue_device = "job:worker/task:0/cpu:0"
-		else:
-			device = "/" + core_str 
-			queue_device = "/cpu:0" 
-
-		# Prepare data
-		# create a data queue or just read all to memory
-		self.train_set = []
-		self.dev_set = []
-		path = os.path.join(self.conf.data_dir, "train.data")
-		if self.conf.use_data_queue:
-			with tf.device(queue_device):
-				self.qr = QueueReader(filename_list=[path])
-				self.dequeue_data_op = self.qr.batched(batch_size=self.conf.batch_size,
-													min_after_dequeue=self.conf.replicas_to_aggregate)
-		else:
-			count = 0
-			path = os.path.join(self.conf.data_dir, "train.data")
-			with codecs.open(path) as f:
-				for line in f:
-					self.train_set.append(line.strip())
-					count += 1
-					if count % 100000 == 0:
-						trainlg.info(" Reading data %d..." % count)
-				trainlg.info(" Reading data %d..." % count)
-			with codecs.open(os.path.join(self.conf.data_dir, "valid.data")) as f:
-				self.dev_set = [line.strip() for line in f]	 
-
-		# build all graph on device
-		graph_nodes = self.build_all(for_deploy=False, variants="", device=device)
-
-		# Create hooks and master server descriptor	
-		saver_hook = hook.NickCheckpointSaverHook(checkpoint_dir=self.ckpt_dir, checkpoint_steps=200,
-												  saver=self.saver,
-												  fetch_data_fn=self.fetch_data,
-												  preproc_fn=self.preproc,
-												  dev_fetches={"loss":graph_nodes["loss"]},
-												  firein_steps=10000)
-		sum_hook = hook.NickSummaryHook(graph_nodes["summary"], graph_nodes["debug_outputs"], self.ckpt_dir, 20, 40)
-		if self.job_type == "worker":
-			ready_for_local_init_op = self.opt.ready_for_local_init_op
-			local_op = self.opt.chief_init_op if self.task_id==0 else self.opt.local_step_init_op
-			sync_replicas_hook = self.opt.make_session_run_hook((self.task_id==0))
-			master = tf.train.Server(self.conf.cluster, job_name=self.job_type,
-									 task_index=self.task_id, config=sess_config,
-									 protocol="grpc+verbs").target
-			hooks = [sync_replicas_hook, saver_hook, sum_hook]
-		else:
-			ready_for_local_init_op = None
-			local_op = None
-			master = ""
-			hooks = [saver_hook, sum_hook] 
-
-		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn(),
-									 ready_op=None, ready_for_local_init_op=ready_for_local_init_op,
-									 local_init_op=local_op, summary_op=None,
-									 saver=self.get_restorer())
-		
-		self.sess = tf.train.MonitoredTrainingSession(master=master, is_chief=(self.task_id==0),
-													  checkpoint_dir=self.ckpt_dir,
-													  scaffold=scaffold,
-													  hooks=hooks,
-													  config=sess_config,
-													  stop_grace_period_secs=120)
-		
-		if self.conf.use_data_queue and self.task_id == 0:
-			graphlg.info("chief worker start data queue runners...")
-			self.qr.start(session=self.sess)
-
-		#if self.task_id == 0:
-		#	trainlg.info("preparing for summaries...")
-		#	sub_dir_train = "summary/%s/%s" % (self.conf.model_kind, self.name) 
-		#	self.summary_writer = tf.summary.FileWriter(os.path.join(runtime_root, sub_dir_train), self.sess.graph, flush_secs=0)
-
-		#if self.job_type == "worker" and self.task_id == 0:
-		#	#graphlg.info("chief worker start parameter queue runners...")
-		#	#sv.start_queue_runners(self.sess, [chief_queue_runner])
-		#	graphlg.info("chief worker insert init tokens...")
-		#	self.sess.run(init_token_op)
-		#	graphlg.info ("%s:%d Session created" % (self.job_type, self.task_id))
-		#	graphlg.info ("Initialization done")
-		return self.sess, graph_nodes
 
 	def adjust_lr_rate(self, global_step, step_loss):
 		self.latest_train_losses.append(step_loss)
@@ -501,12 +341,7 @@ class ModelCore(object):
 			self.sess.run(self.learning_rate_decay_op)
 			self.latest_train_losses = []
 
-	def get_visual_tensor(self):
-		return None, None
-
-	def visualize(self, train_root, gpu=0, records=[], ckpt_steps=None): 
-		sess, graph_nodes, global_steps = self.init_infer(gpu=gpu, variants="", ckpt_steps=None, runtime_root=train_root)
-
+	def visualize(self, train_root, sess, graph_nodes, records=[], ckpt_steps=None): 
 		if "visualize" not in graph_nodes:
 			print "visualize nodes not found"
 			return
@@ -571,42 +406,9 @@ class ModelCore(object):
 				f.write("%s\t%d\n" % (line, 1))
 		return
 		
-	def dummy_train(self, gpu=0, create_new=True, train_root="../runtime"):
-		#gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
-		gpu_options = tf.GPUOptions(allow_growth=True)
-		session_config = tf.ConfigProto(allow_soft_placement=True,
-										log_device_placement=False,
-										gpu_options=gpu_options,
-										intra_op_parallelism_threads=32)
-		print "Building..."
-		graph_nodes = self.build_all(for_deploy=False, variants="", device="/gpu:%d" % gpu)
-		
-
-		print "Creating Data queue..."
-		path = os.path.join(confs[self.name].data_dir, "train.data")
-		qr = QueueReader(filename_list=[path], shared_name="temp_queue")
-		deq_batch_records = qr.batched(batch_size=confs[self.name].batch_size, min_after_dequeue=3)
-		
-		if create_new:
-			ckpt_dir = os.path.join(train_root, "null") 
-			if os.path.exists(ckpt_dir):
-				shutil.rmtree(ckpt_dir)
-		else:
-			ckpt_dir = os.path.join(train_root, self.name)
-		scaffold = tf.train.Scaffold(init_op=None, init_feed_dict=None, init_fn=self.init_fn(),
-									ready_op=None, ready_for_local_init_op=None, local_init_op=None,
-									summary_op=None, saver=self.get_restorer())
-		sess_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
-									gpu_options=gpu_options, intra_op_parallelism_threads=32)
-		sess = tf.train.MonitoredTrainingSession(master="", is_chief=True, checkpoint_dir=ckpt_dir, 
-									scaffold=scaffold, save_summaries_steps=None, save_summaries_secs=None,
-									config=sess_config) 
-		#sess = tf.Session(config=sess_config)
-		#sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
-		#sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
-
+	def dummy_train(self, sess, graph_nodes, use_seg=True):
 		print "Dequeue one batch..."
-		batch_records = sess.run(deq_batch_records)
+		batch_records = self.fetch_data(sess=sess) 
 		N = 10 
 		while True:
 			print "Step only on one batch..."
@@ -634,39 +436,33 @@ class ModelCore(object):
 			print "TIME: %.4f, LOSS: %.10f" % (t, out["loss"])
 			print ""
 
-	def test(self, gpu=0, use_seg=True):
-		sess, graph_nodes, global_steps = self.init_infer(gpu="0", runtime_root="../runtime/")
-		while True:
-			query = raw_input(">>")
-			batch_records = [query]
-			feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True)
-			out_dict = sess.run(graph_nodes["outputs"], feed_dict) 
-			out = self.after_proc(out_dict) 
-			self.print_after_proc(out)
+	def test(self, sess, graph_nodes, variants="", use_seg=True):
+		if variants == "":
+			while True:
+				query = raw_input(">>")
+				batch_records = [query]
+				feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True)
+				out_dict = sess.run(graph_nodes["outputs"], feed_dict) 
+				out = self.after_proc(out_dict) 
+				self.print_after_proc(out)
+		elif variants == "score":
+			while True:
+				post = raw_input("Post >>")
+				resp = raw_input("Response >>")
+				words, _ = tokenize_word(resp) if use_seg else p.split()
+				resp_str = " ".join(words)
+				print "Score resp: %s" % resp_str
+				batch_records = ["%s\t%s" % (post, resp_str)]
+				feed_dict = self.preproc(batch_records, use_seg=True, for_deploy=False)
+				out_dict = sess.run(graph_nodes["outputs"], feed_dict)
+				prob = out_dict["logprobs"]
+				print prob
 
-	def test_logprob(self, gpu=0, use_seg=True):
-		sess, graph_nodes = self.init_infer(gpu="0", variants="score", runtime_root="../runtime/")
-		while True:
-			post = raw_input("Post >>")
-			resp = raw_input("Response >>")
-			words, _ = tokenize_word(resp) if use_seg else p.split()
-			resp_str = " ".join(words)
-			print "Score resp: %s" % resp_str
-			batch_records = ["%s\t%s" % (post, resp_str)]
-			feed_dict = self.preproc(batch_records, use_seg=True, for_deploy=False)
-			out_dict = sess.run(graph_nodes["outputs"], feed_dict)
-			prob = out_dict["logprobs"]
-			print prob
-
-	def __call__(self, flag="train", use_seg=True, gpu=0):
-		if flag == "train":
-			self.dummy_train(gpu)
-		elif flag == "trainold":
-			self.dummy_train(gpu, create_new=False)
-		elif flag == "test":
-			self.test(gpu, use_seg)
-		elif flag == "test_score":
-			self.test_logprob(gpu, use_seg)
+	def __call__(self, sess, graph_nodes, func="train", variants="", use_seg=True, gpu=0):
+		if func == "dummytrain":
+			self.dummy_train(sess=sess, graph_nodes=graph_nodes, use_seg=use_seg)
+		elif func == "test":
+			self.test(sess=sess, graph_nodes=graph_nodes, variants=variants, use_seg=use_seg)
 		else:
-			print "Unknown flag: %s" % flag
+			print "Unknown func: %s" % func
 			exit(0)

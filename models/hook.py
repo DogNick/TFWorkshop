@@ -47,24 +47,24 @@ class NickSummaryHook(session_run_hook.SessionRunHook):
 	def __init__(self,
 				 summary_op,
 				 debug_outputs_map,
-				 output_dir=None,
-				 sum_steps=20,
+				 summary_dir=None,
+				 summary_steps=20,
 				 debug_steps=40):
-		if sum_steps is not None and sum_steps <= 0:
-			raise ValueError("invalid every_n_iter=%s." % sum_steps)
+		if summary_steps is not None and summary_steps <= 0:
+			raise ValueError("invalid every_n_iter=%s." % summary_steps)
 		if debug_steps is not None and debug_steps <= 0:
 			raise ValueError("invalid every_n_iter=%s." % debug_steps)
-		self._sum_steps = sum_steps
-		self._timer_sum = tf.train.SecondOrStepTimer(every_secs=None, every_steps=sum_steps) if sum_steps else None
+		self._summary_steps = summary_steps
+		self._timer_sum = tf.train.SecondOrStepTimer(every_secs=None, every_steps=summary_steps) if summary_steps else None
 		self._timer_debug = tf.train.SecondOrStepTimer(every_secs=None, every_steps=debug_steps) if debug_steps else None
-		self._output_dir = output_dir
+		self._summary_dir = summary_dir
 		self._summary_op = summary_op
 		self._summary_writer = None
 		self._debug_outputs_map = debug_outputs_map
 
 	def begin(self):
-		if self._summary_writer is None and self._output_dir:
-			self._summary_writer = SummaryWriterCache.get(self._output_dir)
+		if self._summary_writer is None and self._summary_dir:
+			self._summary_writer = SummaryWriterCache.get(self._summary_dir)
 		self._next_step = None
 		self._global_step_tensor = training_util.get_global_step()
 		if self._global_step_tensor is None:
@@ -89,8 +89,9 @@ class NickSummaryHook(session_run_hook.SessionRunHook):
 		return SessionRunArgs(requests)
 
 	def after_run(self, run_context, run_values):
-		self._step_time += (time.time() - self._last_time) / self._sum_steps
-		self._loss += run_values.results["loss"] / self._sum_steps
+		trainlg.info(run_values.results)
+		self._step_time += (time.time() - self._last_time) / self._summary_steps
+		self._loss += run_values.results["loss"] / self._summary_steps
 		# check weather to print train info and do summarization
 		if self._timer_sum and self._should_sum:
 			ppx = math.exp(self._loss) if self._loss < 300 else float('inf')
@@ -111,7 +112,6 @@ class NickSummaryHook(session_run_hook.SessionRunHook):
 					else:
 						value_str = str(value[idx])
 					trainlg.debug("[%s][%d] %s" % (key, idx, value_str))
-
 					if isinstance(out, dict):
 						for k, v in out.items():
 							trainlg.debug("[OUT-%s][%d] %s" % (k, idx, " ".join([str(e) for e in v[idx]])))
@@ -131,9 +131,7 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 	def __init__(self,
 				 checkpoint_dir,
 				 checkpoint_steps,
-				 saver,
-				 fetch_data_fn=None,
-				 preproc_fn=None,
+				 model_core,
 				 dev_fetches=[], 
 				 firein_steps=0,
 				 checkpoint_basename="model.ckpt",
@@ -144,18 +142,20 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 		logging.info("Create NickCheckpointSaverHook.")
 		if saver is None:
 			saver = saver_lib._get_saver_or_default()  # pylint: disable=protected-access
-		self._saver = saver
 		self._checkpoint_dir = checkpoint_dir
 		self._save_path = os.path.join(checkpoint_dir, checkpoint_basename)
-		self._timer = tf.train.SecondOrStepTimer(every_secs=None, every_steps=checkpoint_steps)
-		self._listeners = listeners or []
-		self._firein_steps = firein_steps
+		self._saver = model_core.saver
+		self._preproc_fn = model_core.preproc 
+		self._fetch_data_fn = model_core.fetch_data
 		self._dev_fetches = dev_fetches
-		self._fetch_data_fn = fetch_data_fn 
-		self._preproc_fn = preproc_fn 
+		self._firein_steps = firein_steps
+
 		self._dev_n = dev_n
 		self._dev_batch_size = dev_batch_size
+
+		self._timer = tf.train.SecondOrStepTimer(every_secs=None, every_steps=checkpoint_steps)
 		self._summary_writer = SummaryWriterCache.get(self._checkpoint_dir)
+		self._listeners = listeners or []
 
 	def begin(self):
 		self._global_step_tensor = training_util.get_global_step()
