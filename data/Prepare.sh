@@ -6,7 +6,7 @@
 ####
 
 #### configurable ####
-VALID_NUM=100000
+VALID_NUM=10000
 #####
 
 if [ $# -ne 2 ]

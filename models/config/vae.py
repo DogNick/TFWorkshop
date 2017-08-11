@@ -28,6 +28,34 @@ confs["vae"].beam_splits                   = [1]
 confs["vae"].tokenize_mode                 = "word" 
 
 
+#########################################
+confs["vae2-opensubtitle"] = copy.deepcopy(confs["vae"])
+confs["vae2-opensubtitle"].model_kind           = "VAERNN2"
+confs["vae2-opensubtitle"].input_vocab_size     = 30000
+confs["vae2-opensubtitle"].output_vocab_size    = 30000 
+confs["vae2-opensubtitle"].lr_check_steps       = 150 
+confs["vae2-opensubtitle"].lr_keep_steps        = 80000  
+confs["vae2-opensubtitle"].learning_rate        = 0.0001
+confs["vae2-opensubtitle"].num_layers        	= 3 
+confs["vae2-opensubtitle"].learning_rate_decay_factor = 1.0 
+confs["vae2-opensubtitle"].batch_size           = 128 
+confs["vae2-opensubtitle"].cell_model           = "LSTMCell"
+#confs["vae2-opensubtitle"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-2-downsample/weibo.w2v.npy" 
+confs["vae2-opensubtitle"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle"
+confs["vae2-opensubtitle"].addmem               = True 
+confs["vae2-opensubtitle"].input_max_len        = 35
+confs["vae2-opensubtitle"].output_max_len       = 35
+confs["vae2-opensubtitle"].opt_name             = "Adam" 
+#confs["vae2-opensubtitle"].opt_name             = "SGD" 
+#confs["vae2-opensubtitle"].opt_name             = "COCOB" 
+confs["vae2-opensubtitle"].enc_latent_dim       = 256 
+confs["vae2-opensubtitle"].lam                  = 0.0 
+confs["vae2-opensubtitle"].beam_splits          = [8,8,8,8,8,8,8,8,8] 
+confs["vae2-opensubtitle"].use_data_queue       = False
+confs["vae2-opensubtitle"].stddev               = 1.0 
+
+
+
 
 #######################################
 confs["vae-merge-stc-weibo"] = copy.deepcopy(confs["vae"])

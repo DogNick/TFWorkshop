@@ -189,20 +189,20 @@ class ModelCore(object):
 
 	def build_all(self, for_deploy, variants="", device="/cpu:0"):
 		with tf.device(device):
-			with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
-				graphlg.info("Building main graph...")	
-				graph_nodes = self.build(for_deploy, variants="")
-				graphlg.info("Collecting trainable params...")
-				self.trainable_params.extend(tf.trainable_variables())
-				if not for_deploy:	
-					graphlg.info("Creating backpropagation graph and optimizers...")
-					graph_nodes["update"] = self.backprop(graph_nodes["loss"])
-					graph_nodes["summary"] = tf.summary.merge_all()
-					self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
-				if "visualize" not in graph_nodes:
-					graph_nodes["visualize"] = None
-				graphlg.info("Graph done")
-				graphlg.info("")
+			#with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
+			graphlg.info("Building main graph...")	
+			graph_nodes = self.build(for_deploy, variants="")
+			graphlg.info("Collecting trainable params...")
+			self.trainable_params.extend(tf.trainable_variables())
+			if not for_deploy:	
+				graphlg.info("Creating backpropagation graph and optimizers...")
+				graph_nodes["update"] = self.backprop(graph_nodes["loss"])
+				graph_nodes["summary"] = tf.summary.merge_all()
+				self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
+			if "visualize" not in graph_nodes:
+				graph_nodes["visualize"] = None
+			graphlg.info("Graph done")
+			graphlg.info("")
 
 		# More log info about device placement and params memory
 		devices = {}
@@ -232,7 +232,8 @@ class ModelCore(object):
 		# Backprop graph and optimizers
 		conf = self.conf
 		dtype = self.dtype
-		with variable_scope.variable_scope(self.model_kind, dtype=dtype) as scope: 
+		#with tf.variable_scope(self.model_kind) as scope:
+		with tf.name_scope("backprop") as scope:
 			self.learning_rate = tf.Variable(float(conf.learning_rate),
 									trainable=False, name="learning_rate")
 			self.learning_rate_decay_op = self.learning_rate.assign(
@@ -321,11 +322,11 @@ class ModelCore(object):
 				batch_dec_lens.append(np.int32(dec_len))
 				batch_down_wgts.append(down_wgts)
 		self.curr_input_feed = feed_dict = {
-			"%s/enc_inps:0" % self.model_kind: batch_enc_inps,
-			"%s/enc_lens:0" % self.model_kind: batch_enc_lens,
-			"%s/dec_inps:0" % self.model_kind: batch_dec_inps,
-			"%s/dec_lens:0" % self.model_kind: batch_dec_lens,
-			"%s/down_wgts:0" % self.model_kind: batch_down_wgts
+			"inputs/enc_inps:0": batch_enc_inps,
+			"inputs/enc_lens:0": batch_enc_lens,
+			"inputs/dec_inps:0": batch_dec_inps,
+			"inputs/dec_lens:0": batch_dec_lens,
+			"inputs/down_wgts:0": batch_down_wgts
 		}
 		for k, v in feed_dict.items():
 			if not v: 
