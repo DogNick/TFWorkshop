@@ -112,7 +112,8 @@ def main():
 			"tsinghua": TsinghuaHandler,
 			"generate": GenerateHandler,
 			"matchpoem": MatchPoemHandler,
-			"judgepoem": JudgePoemHandler
+			"judgepoem": JudgePoemHandler,
+			"intent": ModelHandler
 	}
 
 	# start front servers 

@@ -6,6 +6,9 @@ import allattn
 from Config import confs
 from Config import Config
 
+########## External ###########
+
+# Tsinghua
 confs["tsinghua"] = Config()
 confs["tsinghua"].model_kind                        = "Tsinghua"
 confs["tsinghua"].input_max_len                     = 40
@@ -15,6 +18,10 @@ confs["postprob"] = Config()
 confs["postprob"].model_kind                        = "Postprob"
 confs["postprob"].input_max_len                     = 40 
 confs["postprob"].output_max_len                    = 30 
+
+# tianchuan
+confs["tianchuan_cnn"] = Config()
+confs["tianchuan_cnn"].model_kind = "KimCNN"
 
 SERVER_SCHEDULES = { 
     "generate":[
@@ -43,7 +50,7 @@ SERVER_SCHEDULES = {
         {
             "attn-bi-poem-no-ave-len":{"tf_server":"0.0.0.0:10020","deploy_gpu":0, "max_in":10, "max_out":10, "max_res":35, "beam_splits":[8,8,8,8,8,8,8,8,8,8,8,8,8]}
         },
-		{
+        {
             "attn-bi-poem-no-ave-len":{"tf_server":"0.0.0.0:10021","deploy_gpu":1, "max_in":10, "max_out":10, "max_res":35, "beam_splits":[8,8,8,8,8,8,8,8,8,8,8,8,8]}
         }
     ],
@@ -51,15 +58,15 @@ SERVER_SCHEDULES = {
         {
             "rnncls-bi-judge_poem":{"tf_server":"0.0.0.0:10030","deploy_gpu":0},
         },
-		{
+        {
             "rnncls-bi-judge_poem":{"tf_server":"0.0.0.0:10031","deploy_gpu":1},
         }
     ],
-	"intent":[
-		{
-			"intent_1":{"tf_server":"0.0.0.0:10032","deploy_gpu":0},
-		}
-	]
+    "intent":[
+        {
+            "tianchuan_cnn":{"tf_server":"0.0.0.0:10040","deploy_gpu":0},
+        }
+    ]
 }
 
 DESC = { 
@@ -69,7 +76,7 @@ DESC = {
             "attn-s2s and segmented beam_search " \
             "to generate and rerank with GNMT score",
     "matchpoem": "for fun",
-	"judgepoem": "to pickup all possible poem sentences from one query and show the probs"
+    "judgepoem": "to pickup all possible poem sentences from one query and show the probs"
 }
 
 ####################################################################
