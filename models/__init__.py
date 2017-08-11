@@ -21,6 +21,7 @@ from AttnSeq2Seq import *
 from VAERNN import * 
 from CVAERNN import *
 from AllAttn import *
+from KimCNN import *
 from RNNClassification import *
 
 from Tsinghua_plan import *
@@ -50,7 +51,8 @@ magic = {
         "RNNClassification": RNNClassification,
         "Postprob": Postprob,
         "Tsinghua": Tsinghua,
-        "AllAttn": AllAttn 
+        "AllAttn": AllAttn,
+        "KimCNN":KimCNN
 }
 
 def create(conf_name, job_type="single", task_id="0", dtype=tf.float32):
