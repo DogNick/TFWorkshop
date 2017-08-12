@@ -134,29 +134,30 @@ class VAERNN2(ModelCore):
 		dtype = self.dtype
 		self.beam_size = 1 if (not for_deploy or variants=="score") else sum(self.conf.beam_splits)
 
-		# lookup tables
-		self.in_table = lookup.MutableHashTable(key_dtype=tf.string,
-													value_dtype=tf.int64,
-													default_value=UNK_ID,
-													shared_name="in_table",
-													name="in_table",
-													checkpoint=True)
-
-		self.out_table = lookup.MutableHashTable(key_dtype=tf.int64,
-													 value_dtype=tf.string,
-													 default_value="_UNK",
-													 shared_name="out_table",
-													 name="out_table",
-													 checkpoint=True)
 		
-		with tf.name_scope("Inputs") as scope:
-			graphlg.info("Creating placeholders...")
-			self.enc_str_inps = tf.placeholder(tf.string, shape=(None, conf.input_max_len), name="enc_inps") 
-			self.enc_lens = tf.placeholder(tf.int32, shape=[None], name="enc_lens") 
-			self.dec_str_inps = tf.placeholder(tf.string, shape=[None, conf.output_max_len + 2], name="dec_inps") 
-			self.dec_lens = tf.placeholder(tf.int32, shape=[None], name="dec_lens") 
-			self.down_wgts = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
+		
+		graphlg.info("Creating placeholders...")
+		self.enc_str_inps = tf.placeholder(tf.string, shape=(None, conf.input_max_len), name="enc_inps") 
+		self.enc_lens = tf.placeholder(tf.int32, shape=[None], name="enc_lens") 
+		self.dec_str_inps = tf.placeholder(tf.string, shape=[None, conf.output_max_len + 2], name="dec_inps") 
+		self.dec_lens = tf.placeholder(tf.int32, shape=[None], name="dec_lens") 
+		self.down_wgts = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
 
+		with tf.name_scope("TableLookup"):
+			# lookup tables
+			self.in_table = lookup.MutableHashTable(key_dtype=tf.string,
+														value_dtype=tf.int64,
+														default_value=UNK_ID,
+														shared_name="in_table",
+														name="in_table",
+														checkpoint=True)
+
+			self.out_table = lookup.MutableHashTable(key_dtype=tf.int64,
+														 value_dtype=tf.string,
+														 default_value="_UNK",
+														 shared_name="out_table",
+														 name="out_table",
+														 checkpoint=True)
 			self.enc_inps = self.in_table.lookup(self.enc_str_inps)
 			self.dec_inps = self.in_table.lookup(self.dec_str_inps)
 
@@ -405,10 +406,13 @@ class VAERNN2(ModelCore):
 
 	def after_proc(self, out):
 		outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
+
+		outs = [(outputs[0][i], probs[0][i]) for i in range(len(outputs[0]))]			
+		#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
+		sorted_outs = sorted(outs, key=lambda x:x[1], reverse=True)
+
 		after_proc_out = {
-			"outputs":outputs,
-			"probs":probs,
-			"attns":attns
+			"outs_probs": sorted_outs
 		}
 		return after_proc_out 
 
@@ -426,14 +430,3 @@ class VAERNN2(ModelCore):
 		embs = np.concatenate(emb_list,axis=0)
 		outs = np.concatenate(out_list,axis=0)
 		return embs, outs
-
-if __name__ == "__main__":
-	name = "vae2-opensubtitle"
-	model = VAERNN2(name)
-	if len(sys.argv) == 2:
-		gpu = 0
-	else:
-		gpu = int(sys.argv[2])
-	flag = sys.argv[1]
-	model(flag, False, gpu)
-	#model(flag, True, gpu)

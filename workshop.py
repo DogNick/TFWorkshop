@@ -52,6 +52,7 @@ tf.app.flags.DEFINE_integer("steps_per_print", 10, "How many training steps to d
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 400, "steps to take to make a checkpoint")
 # for test
 tf.app.flags.DEFINE_string("variants", "", "model variants when testing")
+tf.app.flags.DEFINE_boolean("use_seg", True, "weather to use chinese word segment")
 
 # for export
 tf.app.flags.DEFINE_string("service", None, "to export service")
@@ -102,28 +103,25 @@ def main(_):
 	# Train (distributed or single)
 	elif FLAGS.cmd == "dummytrain": 
 		sess, graph_nodes = init_dummy_train(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
-		model(sess, graph_nodes, func=FLAGS.cmd, use_seg=True)
+		model.dummy_train(sess, graph_nodes)
 	elif FLAGS.cmd == "test":
 		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
-		model(sess, graph_nodes, func=FLAGS.cmd, use_seg=True)
-	elif Flags.cmd == "train":
+		model.test(sess, graph_nodes, use_seg=FLAGS.use_seg)
+	elif FLAGS.cmd == "train":
 		if model.conf.cluster and FLAGS.job_type == "worker" or FLAGS.job_type == "single":
-			spp = FLAGS.steps_per_print
-			spc = FLAGS.steps_per_checkpoint
-
 			# Build graph, initialize graph and creat supervisor 
 			sess, graph_nodes = init_monitored_train(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
 			data_time, step_time, loss = 0.0, 0.0, 0.0
 			trainlg.info("Main loop begin..")
 			offset = 0 
 			iters = 0
-			while not model.sess.should_stop():
+			while not sess.should_stop():
 				# Data preproc 
 				start_time = time.time()
 				examples = model.fetch_data(use_random=False, begin=offset, size=model.conf.batch_size)
 				input_feed = model.preproc(examples, for_deploy=False, use_seg=False, default_wgt=1.5)
-				data_time += (time.time() - start_time) / spp
-				if iters % spp == 0:
+				data_time += (time.time() - start_time) / FLAGS.steps_per_print
+				if iters % FLAGS.steps_per_print == 0:
 					trainlg.info("Data preprocess time %.5f" % data_time)
 					data_time = 0.0
 				step_out = sess.run({"loss":graph_nodes["loss"], "update":graph_nodes["update"]}, input_feed)

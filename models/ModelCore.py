@@ -188,20 +188,20 @@ class ModelCore(object):
 
 	def build_all(self, for_deploy, variants="", device="/cpu:0"):
 		with tf.device(device):
-			with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
-				graphlg.info("Building main graph...")	
-				graph_nodes = self.build(for_deploy, variants="")
-				graphlg.info("Collecting trainable params...")
-				self.trainable_params.extend(tf.trainable_variables())
-				if not for_deploy:	
-					graphlg.info("Creating backpropagation graph and optimizers...")
-					graph_nodes["update"] = self.backprop(graph_nodes["loss"])
-					graph_nodes["summary"] = tf.summary.merge_all()
-					self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
-				if "visualize" not in graph_nodes:
-					graph_nodes["visualize"] = None
-				graphlg.info("Graph done")
-				graphlg.info("")
+			#with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
+			graphlg.info("Building main graph...")	
+			graph_nodes = self.build(for_deploy, variants="")
+			graphlg.info("Collecting trainable params...")
+			self.trainable_params.extend(tf.trainable_variables())
+			if not for_deploy:	
+				graphlg.info("Creating backpropagation graph and optimizers...")
+				graph_nodes["update"] = self.backprop(graph_nodes["loss"])
+				graph_nodes["summary"] = tf.summary.merge_all()
+				self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
+			if "visualize" not in graph_nodes:
+				graph_nodes["visualize"] = None
+			graphlg.info("Graph done")
+			graphlg.info("")
 
 		# More log info about device placement and params memory
 		devices = {}
@@ -231,16 +231,15 @@ class ModelCore(object):
 		# Backprop graph and optimizers
 		conf = self.conf
 		dtype = self.dtype
-		#with tf.variable_scope(self.model_kind) as scope:
+		with tf.name_scope("%s/%s" % (self.model_kind, self.name)):
+			self.learning_rate = tf.Variable(float(conf.learning_rate),
+									trainable=False, name="learning_rate")
+			self.learning_rate_decay_op = self.learning_rate.assign(
+						self.learning_rate * conf.learning_rate_decay_factor)
 
-		self.learning_rate = tf.Variable(float(conf.learning_rate),
-								trainable=False, name="learning_rate")
-		self.learning_rate_decay_op = self.learning_rate.assign(
-					self.learning_rate * conf.learning_rate_decay_factor)
-
-		self.global_step = tf.Variable(0, trainable=False, name="global_step")
-		self.data_idx = tf.Variable(0, trainable=False, name="data_idx")
-		self.data_idx_inc_op = self.data_idx.assign(self.data_idx + conf.batch_size)
+			self.global_step = tf.Variable(0, trainable=False, name="global_step")
+			self.data_idx = tf.Variable(0, trainable=False, name="data_idx")
+			self.data_idx_inc_op = self.data_idx.assign(self.data_idx + conf.batch_size)
 		with tf.name_scope("backprop") as scope:
 			self.optimizers = {
 				"SGD":tf.train.GradientDescentOptimizer(self.learning_rate),
@@ -275,7 +274,7 @@ class ModelCore(object):
 			tf.add_to_collection(tf.GraphKeys.GLOBAL_STEP, self.global_step)
 		return update
 
-	def preproc(self, records, use_seg=True, for_deploy=False, default_wgt=1.0):
+	def preproc(self, records, for_deploy=False, use_seg=True, default_wgt=1.0):
 		# parsing
 		data = []
 		for each in records:
@@ -322,11 +321,11 @@ class ModelCore(object):
 				batch_dec_lens.append(np.int32(dec_len))
 				batch_down_wgts.append(down_wgts)
 		self.curr_input_feed = feed_dict = {
-			"VAERNN/enc_inps:0": batch_enc_inps,
-			"VAERNN/enc_lens:0": batch_enc_lens,
-			"VAERNN/dec_inps:0": batch_dec_inps,
-			"VAERNN/dec_lens:0": batch_dec_lens,
-			"VAERNN/down_wgts:0": batch_down_wgts
+			"enc_inps:0": batch_enc_inps,
+			"enc_lens:0": batch_enc_lens,
+			"dec_inps:0": batch_dec_inps,
+			"dec_lens:0": batch_dec_lens,
+			"down_wgts:0": batch_down_wgts
 		}
 		for k, v in feed_dict.items():
 			if not v: 
@@ -352,7 +351,7 @@ class ModelCore(object):
 		for start in range(0, len(records), self.conf.batch_size):
 			print "Runing examples %d - %d..." % (start, start + self.conf.batch_size)
 			batch = records[start:start + self.conf.batch_size]
-			input_feed = self.preproc(batch, use_seg=False, for_deploy=True)
+			input_feed = self.preproc(batch, use_seg=True, for_deploy=True)
 			#visuals, outputs = sess.run([graph_nodes["visualize"], graph_nodes["outputs"]], feed_dict=input_feed)
 			visuals = sess.run(graph_nodes["visualize"], feed_dict=input_feed)
 			for k, v in visuals.items():
@@ -406,7 +405,7 @@ class ModelCore(object):
 				f.write("%s\t%d\n" % (line, 1))
 		return
 		
-	def dummy_train(self, sess, graph_nodes, use_seg=True):
+	def dummy_train(self, sess, graph_nodes):
 		print "Dequeue one batch..."
 		batch_records = self.fetch_data(sess=sess) 
 		N = 10 
@@ -436,14 +435,16 @@ class ModelCore(object):
 			print "TIME: %.4f, LOSS: %.10f" % (t, out["loss"])
 			print ""
 
-	def test(self, sess, graph_nodes, variants="", use_seg=True):
+	def test(self, sess, graph_nodes, use_seg=True, variants=""):
 		if variants == "":
 			while True:
 				query = raw_input(">>")
 				batch_records = [query]
 				feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True)
+				print "[feed_dict]", feed_dict
 				out_dict = sess.run(graph_nodes["outputs"], feed_dict) 
 				out = self.after_proc(out_dict) 
+				print "[out_after_proc]", out 
 				self.print_after_proc(out)
 		elif variants == "score":
 			while True:
@@ -457,12 +458,3 @@ class ModelCore(object):
 				out_dict = sess.run(graph_nodes["outputs"], feed_dict)
 				prob = out_dict["logprobs"]
 				print prob
-
-	def __call__(self, sess, graph_nodes, func="train", variants="", use_seg=True, gpu=0):
-		if func == "dummytrain":
-			self.dummy_train(sess=sess, graph_nodes=graph_nodes, use_seg=use_seg)
-		elif func == "test":
-			self.test(sess=sess, graph_nodes=graph_nodes, variants=variants, use_seg=use_seg)
-		else:
-			print "Unknown func: %s" % func
-			exit(0)

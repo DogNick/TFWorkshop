@@ -89,9 +89,7 @@ class NickSummaryHook(session_run_hook.SessionRunHook):
 		return SessionRunArgs(requests)
 
 	def after_run(self, run_context, run_values):
-		trainlg.info(run_values.results)
 		self._step_time += (time.time() - self._last_time) / self._summary_steps
-		self._loss += run_values.results["loss"] / self._summary_steps
 		# check weather to print train info and do summarization
 		if self._timer_sum and self._should_sum:
 			ppx = math.exp(self._loss) if self._loss < 300 else float('inf')
@@ -140,8 +138,8 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 				 listeners=None):
 		
 		logging.info("Create NickCheckpointSaverHook.")
-		if saver is None:
-			saver = saver_lib._get_saver_or_default()  # pylint: disable=protected-access
+		if model_core.saver is None:
+			model_core.saver = saver_lib._get_saver_or_default()  # pylint: disable=protected-access
 		self._checkpoint_dir = checkpoint_dir
 		self._save_path = os.path.join(checkpoint_dir, checkpoint_basename)
 		self._saver = model_core.saver
@@ -149,6 +147,7 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 		self._fetch_data_fn = model_core.fetch_data
 		self._dev_fetches = dev_fetches
 		self._firein_steps = firein_steps
+		self._summary_tag_scope = "%s/%s" % (model_core.model_kind,model_core.name)
 
 		self._dev_n = dev_n
 		self._dev_batch_size = dev_batch_size
@@ -193,9 +192,10 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 			sess = run_context.session
 			dev_time = 0.0
 			begin = 0
+			i = 0
 			dev_statistics = {}
 			# count and average all dev_statistics over dev batch
-			while begin < self._dev_n: 
+			while i < self._dev_n: 
 				examples = self._fetch_data_fn(False, begin, self._dev_batch_size, True)
 				input_feed = self._preproc_fn(examples)
 				t0 = time.time()
@@ -207,11 +207,12 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 					dev_statistics[key] += step_out[each] * 1.0 / self._dev_n
 				dev_time += round(time.time() - t0, 2) / self._dev_n
 				begin += self._dev_batch_size
+				i += 1
 
 			# summarize dev statistics
 			summary = tf.Summary()
 			for k, v in dev_statistics.items():
-				summary.value.add(tag=key, simple_value=v)
+				summary.value.add(tag="%s/%s" % (self._summary_tag_scope, key), simple_value=v)
 			self._summary_writer.add_summary(summary, global_steps)
 
 			dev_ppx = math.exp(dev_statistics["dev_loss"]) if dev_statistics["dev_loss"] < 300 else float('inf')

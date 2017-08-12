@@ -36,6 +36,7 @@ FLAGS = tf.app.flags.FLAGS
 
 # get graph log
 graphlg = log.getLogger("graph")
+trainlg = log.getLogger("train")
 
 magic = {
         #"DeepMatch": DeepMatch,

@@ -53,8 +53,7 @@ confs["vae2-opensubtitle"].lam                  = 0.0
 confs["vae2-opensubtitle"].beam_splits          = [8,8,8,8,8,8,8,8,8] 
 confs["vae2-opensubtitle"].use_data_queue       = False
 confs["vae2-opensubtitle"].stddev               = 1.0 
-confs["vae2-opensubtitle"].kld_ratio             = 0.01 
-
+confs["vae2-opensubtitle"].kld_ratio            = 0.01 
 
 
 
