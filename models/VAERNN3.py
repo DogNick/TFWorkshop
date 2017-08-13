@@ -97,14 +97,14 @@ def CreateVAE(states, enc_latent_dim, stddev, reuse=False, dtype=tf.float32, nam
 
 		def _dec_z(s):
 			# Should this z be concatenated by original state ?
-			#dim = int(s.shape[1]) + enc_latent_dim 
-			#z = tf.concat([z, s], 1)
 			with tf.name_scope("DecFromLatent"):
 				dim = int(s.shape[1])
-				W_dec_z = tf.Variable(tf.random_normal([enc_latent_dim, dim]), name="w_dec_z")
+				z2 = tf.concat([z, s], 1)
+
+				W_dec_z = tf.Variable(tf.random_normal([enc_latent_dim + dim, dim]), name="w_dec_z")
 				b_dec_z = tf.Variable(tf.random_normal([dim]), name="b_enc_z") 
 				name = re.sub(":", "_", re.split("/", s.name)[-1])
-				dec_z = tf.tanh(tf.matmul(z, W_dec_z) + b_dec_z)
+				dec_z = tf.tanh(tf.matmul(z2, W_dec_z) + b_dec_z)
 				return dec_z
 
 		# Should this z be concatenated by original state ?
@@ -115,7 +115,7 @@ def CreateVAE(states, enc_latent_dim, stddev, reuse=False, dtype=tf.float32, nam
 	return vae_states, KLD, None 
 
 
-class VAERNN2(ModelCore):
+class VAERNN3(ModelCore):
 	"""This is a modified vae
 		1, latent variables are based on state(s)
 		2, VAE created a decoded states based on concat(z,s)
@@ -158,6 +158,8 @@ class VAERNN2(ModelCore):
 														 checkpoint=True)
 			self.enc_inps = self.in_table.lookup(self.enc_str_inps)
 			self.dec_inps = self.in_table.lookup(self.dec_str_inps)
+			#self.enc_inps = tf.Print(self.enc_inps, [self.enc_inps], message="enc_inps", summarize=100000)
+			#self.dec_inps = tf.Print(self.dec_inps, [self.dec_inps], message="dec_inps", summarize=100000)
 
 		# Create encode graph and get attn states
 		graphlg.info("Creating embeddings and embedding enc_inps.")

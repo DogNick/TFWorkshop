@@ -76,73 +76,80 @@ def PriorNet(state, hidden_units, enc_latent_dim, stddev=1.0, prior_type="mlp"):
 		logvar_prior = 2 * tf.log(stddev)
 	return z, mu_prior, logvar_prior 
 
-def CreateVAE(states, enc_latent_dim, mu_prior, logvar_prior, stddev=1.0, name="vae", reuse=False, dtype=tf.float32):
-	with variable_scope.variable_scope(name, dtype=dtype, reuse=reuse) as scope: 
-		l2_loss = tf.constant(0.0)	 
+
+def CreateVAE(states, enc_latent_dim, stddev, reuse=False, dtype=tf.float32, name_scope=None):
+	with tf.name_scope(name_scope) as scope:
 		graphlg.info("Creating latent z for encoder states") 
-		epsilon = tf.random_normal([tf.shape(states)[0], enc_latent_dim], name="epsilon", stddev=stddev)
-		if states == None:
-			graphlg.error("None states !!!") 
-			exit(0)
-		h_state = states
-		# miu and sigma param for conditional latent variables
-		W_enc_hidden_mu = tf.get_variable(name="w_enc_hidden_mu", shape=[int(h_state.shape[1]), enc_latent_dim], dtype=tf.float32,
-											initializer=None)
-		b_enc_hidden_mu = tf.get_variable(name="b_enc_hidden_mu", shape=[enc_latent_dim], dtype=tf.float32,
-											initializer=None) 
-		W_enc_hidden_logvar = tf.get_variable(name="w_enc_hidden_logvar", shape=[int(h_state.shape[1]), enc_latent_dim], dtype=tf.float32,
-												initializer=None)
-		b_enc_hidden_logvar = tf.get_variable(name="b_enc_hidden_logvar", shape=[enc_latent_dim], dtype=tf.float32,
-												initializer=None) 
-		# Should there be any non-linearty?
-		mu_enc = tf.matmul(h_state, W_enc_hidden_mu) + b_enc_hidden_mu
-		logvar_enc = tf.matmul(h_state, W_enc_hidden_logvar) + b_enc_hidden_logvar
+		all_states = []
+		for each in states:
+			all_states.extend(list(each))
+		h_state = tf.concat(all_states, 1, name="concat_states")
 
-		# regular
-		l2_loss += tf.nn.l2_loss(W_enc_hidden_mu)
-		l2_loss += tf.nn.l2_loss(W_enc_hidden_logvar)
-		z = mu_enc + tf.exp(0.5 * logvar_enc) * epsilon
+		with tf.name_scope("EncToLatent"):
+			W_enc_hidden_mu = tf.Variable(tf.random_normal([int(h_state.get_shape()[1]), enc_latent_dim]),name="w_enc_hidden_mu")
+			b_enc_hidden_mu = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_mu") 
+			W_enc_hidden_logvar = tf.Variable(tf.random_normal([int(h_state.get_shape()[1]), enc_latent_dim]), name="w_enc_hidden_logvar")
+			b_enc_hidden_logvar = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_logvar") 
+			# Should there be any non-linearty?
+			# A normal sampler
+			with tf.name_scope("Sample"):
+				mu_enc = tf.matmul(h_state, W_enc_hidden_mu) + b_enc_hidden_mu
+				logvar_enc = tf.matmul(h_state, W_enc_hidden_logvar) + b_enc_hidden_logvar
+				epsilon = tf.random_normal(tf.shape(logvar_enc), name="epsilon", stddev=stddev)
+				z = mu_enc + tf.exp(0.5 * logvar_enc) * epsilon
 
-		# KL divergence
-		# log(sigma2^2/sigma1^2) + (sigma1^2 + (mu1 - mu2)^2) / (2 * sigma2^2) - 0.5
-		KLD = -0.5 * tf.reduce_sum(1 + logvar_enc - logvar_prior - (tf.pow(mu_enc - mu_prior, 2) + tf.exp(logvar_enc))/tf.exp(logvar_prior), axis = 1)
-		return z, KLD, l2_loss
+		def _dec_z(s):
+			# Should this z be concatenated by original state ?
+			#dim = int(s.shape[1]) + enc_latent_dim 
+			#z = tf.concat([z, s], 1)
+			with tf.name_scope("DecFromLatent"):
+				dim = int(s.shape[1])
+				W_dec_z = tf.Variable(tf.random_normal([enc_latent_dim, dim]), name="w_dec_z")
+				b_dec_z = tf.Variable(tf.random_normal([dim]), name="b_enc_z") 
+				name = re.sub(":", "_", re.split("/", s.name)[-1])
+				dec_z = tf.tanh(tf.matmul(z, W_dec_z) + b_dec_z)
+				return dec_z
+
+		# Should this z be concatenated by original state ?
+		vae_states = tf.contrib.framework.nest.map_structure(_dec_z, states) 
+
+		with tf.name_scope("KLD"):
+			KLD = -0.5 * tf.reduce_sum(1 + logvar_enc - tf.pow(mu_enc, 2) - tf.exp(logvar_enc), axis = 1)
+	return vae_states, KLD, None 
 
 def DynRNN(cell_model, num_units, num_layers, emb_inps, enc_lens, keep_prob=1.0, bidi=False, name_scope="encoder", dtype=tf.float32):
-	if bidi:
-		with variable_scope.variable_scope(name_scope, dtype=dtype) as scope: 
-			cell_fw = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob)
-			cell_bw = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob)
-		enc_outs, enc_states = bidirectional_dynamic_rnn(cell_fw=cell_fw, cell_bw=cell_bw,
-														inputs=emb_inps,
-														sequence_length=enc_lens,
-														dtype=dtype,
-														parallel_iterations=16,
-														scope=scope)
+	with tf.name_scope(name_scope) as scope:
+		if bidi:
+			cell_fw = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell_fw")
+			cell_bw = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell_bw")
+			enc_outs, enc_states = bidirectional_dynamic_rnn(cell_fw=cell_fw, cell_bw=cell_bw,
+															inputs=emb_inps,
+															sequence_length=enc_lens,
+															dtype=dtype,
+															parallel_iterations=16,
+															scope=name_scope)
+			fw_s, bw_s = enc_states 
+			enc_states = []
+			for f, b in zip(fw_s, bw_s):
+				if isinstance(f, LSTMStateTuple):
+					enc_states.append(LSTMStateTuple(tf.concat([f.c, b.c], axis=1), tf.concat([f.h, b.h], axis=1)))
+				else:
+					enc_states.append(tf.concat([f, b], 1))
 
-		fw_s, bw_s = enc_states 
-		enc_states = []
-		for f, b in zip(fw_s, bw_s):
-			if isinstance(f, LSTMStateTuple):
-				enc_states.append(LSTMStateTuple(tf.concat([f.c, b.c], axis=1), tf.concat([f.h, b.h], axis=1)))
-			else:
-				enc_states.append(tf.concat([f, b], 1))
-
-		enc_outs = tf.concat([enc_outs[0], enc_outs[1]], axis=2)
-		mem_size = 2 * num_units
-		enc_state_size = 2 * num_units 
-	else:
-		with variable_scope.variable_scope(name_scope, dtype=dtype) as scope: 
-			cell = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob)
-		enc_outs, enc_states = dynamic_rnn(cell=cell,
-										   inputs=emb_inps,
-										   sequence_length=enc_lens,
-										   parallel_iterations=16,
-										   scope=scope,
-										   dtype=dtype)
-		mem_size = num_units
-		enc_state_size = num_units
-	return enc_outs, enc_states, mem_size, enc_state_size 
+			enc_outs = tf.concat([enc_outs[0], enc_outs[1]], axis=2)
+			mem_size = 2 * num_units
+			enc_state_size = 2 * num_units 
+		else:
+			cell = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell")
+			enc_outs, enc_states = dynamic_rnn(cell=cell,
+											   inputs=emb_inps,
+											   sequence_length=enc_lens,
+											   parallel_iterations=16,
+											   dtype=dtype,
+											   scope=name_scope)
+			mem_size = num_units
+			enc_state_size = num_units
+	return enc_outs, enc_states, mem_size, enc_state_size
 
 def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max_mem_size, keep_prob=1.0, addmem=False, dtype=tf.float32):
 	# Attention  
@@ -163,8 +170,6 @@ def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max
 	attn_cell = DynamicAttentionWrapper(cell=decoder_cell, attention_mechanism=mechanism,
 											attention_size=num_units, addmem=addmem)
 	return attn_cell
-
-
 
 
 def DecStateInit(thinking_state, num_units, decoder_cell, batch_size, beam_size):
@@ -196,7 +201,6 @@ def DecStateInit(thinking_state, num_units, decoder_cell, batch_size, beam_size)
 	return zero_states
 
 
-
 class CVAERNN(ModelCore):
 	def __init__(self, name, job_type="single", task_id=0, dtype=tf.float32):
 		super(self.__class__, self).__init__(name, job_type, task_id, dtype) 
@@ -212,20 +216,6 @@ class CVAERNN(ModelCore):
 		self.beam_splits = conf.beam_splits
 		self.beam_size = 1 if not for_deploy else sum(self.beam_splits)
 
-		# Input maps
-		self.in_table = lookup.MutableHashTable(key_dtype=tf.string,
-													 value_dtype=tf.int64,
-													 default_value=UNK_ID,
-													 shared_name="in_table",
-													 name="in_table",
-													 checkpoint=True)
-
-		self.out_table = lookup.MutableHashTable(key_dtype=tf.int64,
-												 value_dtype=tf.string,
-												 default_value="_UNK",
-												 shared_name="out_table",
-												 name="out_table",
-												 checkpoint=True)
 		graphlg.info("Creating placeholders...")
 		self.enc_str_inps = tf.placeholder(tf.string, shape=(None, conf.input_max_len), name="enc_inps") 
 		self.enc_lens = tf.placeholder(tf.int32, shape=[None], name="enc_lens") 
@@ -234,24 +224,44 @@ class CVAERNN(ModelCore):
 		self.dec_lens = tf.placeholder(tf.int32, shape=[None], name="dec_lens") 
 		self.down_wgts = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
 
-		# lookup
-		self.enc_inps = self.in_table.lookup(self.enc_str_inps)
-		self.dec_inps = self.in_table.lookup(self.dec_str_inps)
+		with tf.name_scope("TableLookup"):
+			# Input maps
+			self.in_table = lookup.MutableHashTable(key_dtype=tf.string,
+														 value_dtype=tf.int64,
+														 default_value=UNK_ID,
+														 shared_name="in_table",
+														 name="in_table",
+														 checkpoint=True)
+
+			self.out_table = lookup.MutableHashTable(key_dtype=tf.int64,
+													 value_dtype=tf.string,
+													 default_value="_UNK",
+													 shared_name="out_table",
+													 name="out_table",
+													 checkpoint=True)
+			# lookup
+			self.enc_inps = self.in_table.lookup(self.enc_str_inps)
+			self.dec_inps = self.in_table.lookup(self.dec_str_inps)
 
 		graphlg.info("Preparing decoder inps...")
 		dec_inps = tf.slice(self.dec_inps, [0, 0], [-1, conf.output_max_len + 1])
 
 		# Create encode graph and get attn states
 		graphlg.info("Creating embeddings and embedding enc_inps.")
-
 		with ops.device("/cpu:0"):
 			self.embedding = variable_scope.get_variable("embedding", [conf.output_vocab_size, conf.embedding_size])
-			self.emb_inps = embedding_lookup_unique(self.embedding, self.enc_inps)
-			emb_dec_inps = embedding_lookup_unique(self.embedding, dec_inps)
+		with tf.name_scope("Embed") as scope:
+			dec_inps = tf.slice(self.dec_inps, [0, 0], [-1, conf.output_max_len + 1])
+			with ops.device("/cpu:0"):
+				self.emb_inps = embedding_lookup_unique(self.embedding, self.enc_inps)
+				emb_dec_inps = embedding_lookup_unique(self.embedding, dec_inps)
 
 		graphlg.info("Creating dynamic x rnn...")
 		self.enc_outs, self.enc_states, mem_size, enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
-																		self.emb_inps, self.enc_lens, keep_prob=1.0, bidi=False, name_scope="x_enc")
+																		self.emb_inps, self.enc_lens, keep_prob=1.0,
+																		bidi=conf.bidirectional, name_scope="DynRNNEncoder")
+		# Do vae on the state of the last layer of the encoder 
+
 		memory = tf.reshape(tf.concat([self.enc_outs] * self.beam_size, 2), [-1, conf.input_max_len, mem_size])
 		memory_lens = tf.squeeze(tf.reshape(tf.concat([tf.expand_dims(self.enc_lens, 1)] * self.beam_size, 1), [-1, 1]), 1)
 		batch_size = tf.shape(self.enc_outs)[0]
@@ -525,40 +535,3 @@ class CVAERNN(ModelCore):
 			"attns":attns
 		}
 		return after_proc_out 
-
-	def Project(self, session, records, tensor):
-		#embedding = get_dtype=tensor.dtype, tensor_array_name="proj_name", size=len(records), infer_shape=False)
-		emb_list = [] 
-		out_list = []
-		for start in range(0, len(records), self.conf.batch_size):
-			batch = records[start:start + self.conf.batch_size]
-			examples = self.fetch_test_data(batch, begin=0, size=len(batch))
-			input_feed = self.get_batch(examples)
-			a = session.run([tensor, self.outputs], feed_dict=input_feed)
-			emb_list.append(a[0])
-			out_list.append(a[1])
-		embs = np.concatenate(emb_list,axis=0)
-		outs = np.concatenate(out_list,axis=0)
-		return embs, outs
-
-if __name__ == "__main__":
-	#name = "cvae4-merge-stc-weibo" 
-	#name = "cvae4_1-weibo-stc-bought" 
-
-	#somehow good
-	name = "cvae-simpleprior-reddit-addmem"
-	#name = "cvae-1024-simpleprior-attn"
-	#name = "cvae-1024-simpleprior-attn-addmem"
-	#name = "cvae-1024-prior-attn-addmem"
-
-	#name = "cvae-512-prior-attn"
-	#name = "cvae-512-prior-noattn"
-	#name = "cvae-128-prior-attn"
-	#name = "cvae-512-noprior-noattn"
-	#name = "cvae-bi-simpleprior-attn-poem"
-	model = CVAERNN(name)
-	if len(sys.argv) == 2:
-		gpu = 0
-	flag = sys.argv[1]
-	#model(flag)
-	model(flag, use_seg=False)

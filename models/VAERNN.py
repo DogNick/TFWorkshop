@@ -480,17 +480,3 @@ class VAERNN(ModelCore):
 		embs = np.concatenate(emb_list,axis=0)
 		outs = np.concatenate(out_list,axis=0)
 		return embs, outs
-
-if __name__ == "__main__":
-	#name = "vae-merge-stc-weibo" 
-	name = "vae-1024-attn-addmem"
-	#name = "vae-reddit-addmem"
-	#name = "vae-bi-1024-attn-addmem-poem"
-	model = VAERNN(name)
-	if len(sys.argv) == 2:
-		gpu = 0
-	else:
-		gpu = int(sys.argv[2])
-	flag = sys.argv[1]
-	#model(flag, False)
-	model(flag, True, gpu)

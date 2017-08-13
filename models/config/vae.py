@@ -55,6 +55,53 @@ confs["vae2-opensubtitle"].use_data_queue       = False
 confs["vae2-opensubtitle"].stddev               = 1.0 
 confs["vae2-opensubtitle"].kld_ratio            = 0.01 
 
+##########################################
+confs["vae2-addmem-weibo"] = copy.deepcopy(confs["vae"])
+confs["vae2-addmem-weibo"].model_kind           = "VAERNN2"
+confs["vae2-addmem-weibo"].input_vocab_size     = 40000
+confs["vae2-addmem-weibo"].output_vocab_size    = 40000
+confs["vae2-addmem-weibo"].lr_check_steps       = 150 
+confs["vae2-addmem-weibo"].lr_keep_steps        = 80000  
+confs["vae2-addmem-weibo"].learning_rate        = 0.0001
+confs["vae2-addmem-weibo"].learning_rate_decay_factor = 1.0 
+confs["vae2-addmem-weibo"].batch_size           = 128 
+confs["vae2-addmem-weibo"].cell_model           = "LSTMCell"
+confs["vae2-addmem-weibo"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-2-downsample/weibo.w2v.npy" 
+confs["vae2-addmem-weibo"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-all-clean"
+confs["vae2-addmem-weibo"].input_max_len        = 35 
+confs["vae2-addmem-weibo"].output_max_len       = 35 
+confs["vae2-addmem-weibo"].opt_name             = "Adam" 
+confs["vae2-addmem-weibo"].enc_latent_dim       = 1024 
+confs["vae2-addmem-weibo"].lam                  = 0.0 
+confs["vae2-addmem-weibo"].beam_splits          = [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
+confs["vae2-addmem-weibo"].use_data_queue       = False
+confs["vae2-addmem-weibo"].stddev               = 1.0 
+confs["vae2-addmem-weibo"].addmem               = True 
+confs["vae2-addmem-weibo"].kld_ratio            = 0.001
+
+##########################################
+confs["vae3-opensubtitle"] = copy.deepcopy(confs["vae"])
+confs["vae3-opensubtitle"].model_kind           = "VAERNN3"
+confs["vae3-opensubtitle"].input_vocab_size     = 20000
+confs["vae3-opensubtitle"].output_vocab_size    = 20000
+confs["vae3-opensubtitle"].lr_check_steps       = 150 
+confs["vae3-opensubtitle"].lr_keep_steps        = 80000  
+confs["vae3-opensubtitle"].learning_rate        = 0.0002
+confs["vae3-opensubtitle"].learning_rate_decay_factor = 1.0 
+confs["vae3-opensubtitle"].batch_size           = 64 
+confs["vae3-opensubtitle"].cell_model           = "LSTMCell"
+confs["vae3-opensubtitle"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle"
+confs["vae3-opensubtitle"].input_max_len        = 35 
+confs["vae3-opensubtitle"].output_max_len       = 35 
+confs["vae3-opensubtitle"].opt_name             = "Adam" 
+confs["vae3-opensubtitle"].enc_latent_dim       = 256 
+confs["vae3-opensubtitle"].lam                  = 0.0 
+confs["vae3-opensubtitle"].beam_splits          = [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
+confs["vae3-opensubtitle"].use_data_queue       = False
+confs["vae3-opensubtitle"].stddev               = 1.0 
+confs["vae3-opensubtitle"].addmem               = True 
+confs["vae3-opensubtitle"].kld_ratio            = 1 
+
 
 
 #######################################

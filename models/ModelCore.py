@@ -1,5 +1,6 @@
 import sys
 sys.path.insert(0, "/search/odin/Nick/_python_build")
+import re
 import abc
 import time
 import shutil
@@ -274,14 +275,14 @@ class ModelCore(object):
 			tf.add_to_collection(tf.GraphKeys.GLOBAL_STEP, self.global_step)
 		return update
 
-	def preproc(self, records, for_deploy=False, use_seg=True, default_wgt=1.0):
+	def preproc(self, records, for_deploy=False, use_seg=False, default_wgt=1.0):
 		# parsing
 		data = []
 		for each in records:
 			if for_deploy:
 				p = each.strip()
-				words, _ = tokenize_word(p) if use_seg else (p.split(), None)
-				p_list = words #re.split(" +", p.strip())
+				words, _ = tokenize_word(p) if use_seg else (re.split(" +", p), None)
+				p_list = words
 				data.append([p_list, len(p_list) + 1, [], 1, 1.0])
 			else:
 				segs = re.split("\t", each.strip())
@@ -340,7 +341,7 @@ class ModelCore(object):
 			self.sess.run(self.learning_rate_decay_op)
 			self.latest_train_losses = []
 
-	def visualize(self, train_root, sess, graph_nodes, records=[], ckpt_steps=None): 
+	def visualize(self, train_root, sess, graph_nodes, records=[], use_seg=False, ckpt_steps=None): 
 		if "visualize" not in graph_nodes:
 			print "visualize nodes not found"
 			return
@@ -351,7 +352,7 @@ class ModelCore(object):
 		for start in range(0, len(records), self.conf.batch_size):
 			print "Runing examples %d - %d..." % (start, start + self.conf.batch_size)
 			batch = records[start:start + self.conf.batch_size]
-			input_feed = self.preproc(batch, use_seg=True, for_deploy=True)
+			input_feed = self.preproc(batch, use_seg=use_seg, for_deploy=True)
 			#visuals, outputs = sess.run([graph_nodes["visualize"], graph_nodes["outputs"]], feed_dict=input_feed)
 			visuals = sess.run(graph_nodes["visualize"], feed_dict=input_feed)
 			for k, v in visuals.items():
@@ -411,7 +412,7 @@ class ModelCore(object):
 		N = 10 
 		while True:
 			print "Step only on one batch..."
-			feed_dict = self.preproc(batch_records, use_seg=False, for_deploy=False)
+			feed_dict = self.preproc(batch_records, for_deploy=False)
 			t0 = time.time()
 			fetches = {
 				"loss":graph_nodes["loss"],
@@ -444,7 +445,6 @@ class ModelCore(object):
 				print "[feed_dict]", feed_dict
 				out_dict = sess.run(graph_nodes["outputs"], feed_dict) 
 				out = self.after_proc(out_dict) 
-				print "[out_after_proc]", out 
 				self.print_after_proc(out)
 		elif variants == "score":
 			while True:
@@ -454,7 +454,7 @@ class ModelCore(object):
 				resp_str = " ".join(words)
 				print "Score resp: %s" % resp_str
 				batch_records = ["%s\t%s" % (post, resp_str)]
-				feed_dict = self.preproc(batch_records, use_seg=True, for_deploy=False)
+				feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=False)
 				out_dict = sess.run(graph_nodes["outputs"], feed_dict)
 				prob = out_dict["logprobs"]
 				print prob

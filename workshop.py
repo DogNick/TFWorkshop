@@ -72,7 +72,8 @@ def main(_):
 		print "Reading data..."
 		with codecs.open(FLAGS.visualize_file) as f:
 			records = [re.split("\t", f.next().strip())[0] for i in range(1000)]
-		model.visualize(FLAGS.train_root, gpu=FLAGS.gpu, records=records)
+		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
+		model.visualize(FLAGS.train_root, sess, graph_nodes, records, FLAGS.use_seg)
 	# Export for deployment
 	elif FLAGS.cmd == "export": 
 		if FLAGS.schedule != None:

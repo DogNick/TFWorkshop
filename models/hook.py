@@ -196,6 +196,7 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 			dev_statistics = {}
 			# count and average all dev_statistics over dev batch
 			while i < self._dev_n: 
+				trainlg.info("[DEV] batch %d" % i)
 				examples = self._fetch_data_fn(False, begin, self._dev_batch_size, True)
 				input_feed = self._preproc_fn(examples)
 				t0 = time.time()
