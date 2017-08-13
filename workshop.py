@@ -63,11 +63,9 @@ tf.app.flags.DEFINE_string("visualize_file", None, "datafile to visualize")
 FLAGS = tf.app.flags.FLAGS
 
 def main(_):
-	# init ans get configurations
-	model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
-
 	# Visualization 
 	if FLAGS.cmd == "visualize":
+		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 		print "Reading data..."
 		with codecs.open(FLAGS.visualize_file) as f:
 			records = [re.split("\t", f.next().strip())[0] for i in range(1000)]
@@ -79,6 +77,7 @@ def main(_):
 		else:
 			schedule["Null"] = {conf_name:{}}
 		for conf_name in schedule:
+			model = create(conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 			if conf_name not in confs:
 				print("\nNo model conf '%s' found !!!! Skipped\n" % conf_name)
 				exit(0)
@@ -101,12 +100,15 @@ def main(_):
 			tf.reset_default_graph()
 	# Train (distributed or single)
 	elif FLAGS.cmd == "dummytrain": 
+		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 		sess, graph_nodes = init_dummy_train(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
 		model(sess, graph_nodes, func=FLAGS.cmd, use_seg=True)
 	elif FLAGS.cmd == "test":
+		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
 		model(sess, graph_nodes, func=FLAGS.cmd, use_seg=True)
 	elif Flags.cmd == "train":
+		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 		if model.conf.cluster and FLAGS.job_type == "worker" or FLAGS.job_type == "single":
 			spp = FLAGS.steps_per_print
 			spc = FLAGS.steps_per_checkpoint

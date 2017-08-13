@@ -233,7 +233,6 @@ then
     SCHEDULE=$3
     echo "exporting schedule $SERVICE $SCHEDULE ..."
     python workshop.py --cmd=export --service=$SERVICE --schedule=$SCHEDULE --train_root=$TRAIN_ROOT
-else:
 elif [ "$1"x = "dummytrain"x ]
 then
     RUNTIME_NAME=$2

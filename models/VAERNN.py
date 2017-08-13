@@ -431,8 +431,8 @@ class VAERNN(ModelCore):
 		var_map = {}
 		for each in var_list:
 			name = each.name
-			#name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
-			#name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
+			name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
+			name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
 			#name = re.sub("gru_cell/bias", "gru_cell/biases", name)
 			#name = re.sub("gru_cell/kernel", "gru_cell/weights", name)
 			#name = re.sub("gates/bias", "gates/biases", name)
@@ -442,7 +442,7 @@ class VAERNN(ModelCore):
 			#name = re.sub("bias", "biases", name)
 			#name = re.sub("dense/weights", "dense/kernel", name)
 			#name = re.sub("dense/biases", "dense/bias", name)
-			#name = re.sub(":0", "", name)
+			name = re.sub(":0", "", name)
 			var_map[name] = each
 
 		restorer = tf.train.Saver(var_list=var_map)
@@ -450,16 +450,16 @@ class VAERNN(ModelCore):
 
 	def after_proc(self, out):
 		outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
-		outs = [(outputs[0][i], probs[0][i]) for i in range(len(outputs[0]))]			
-		sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
-		after_proc_out = {
-			"outs_probs": sorted_outs
-		}
+		#outs = [(outputs[0][i], probs[0][i]) for i in range(len(outputs[0]))]			
+		#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
 		#after_proc_out = {
-		#	"outputs":outputs,
-		#	"probs":probs,
-		#	"attns":attns
-		#}
+	#		"outs_probs": sorted_outs
+	#	}
+		after_proc_out = {
+			"outputs":outputs,
+			"probs":probs,
+			"attns":attns
+		}
 		return after_proc_out 
 
 	def print_after_proc(self, after_proc):

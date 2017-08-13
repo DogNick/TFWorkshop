@@ -60,9 +60,6 @@ magic = {
 def create(conf_name, job_type="single", task_id="0", dtype=tf.float32):
     return magic[confs[conf_name].model_kind](conf_name, job_type, task_id, dtype)
 
-
-
-
 def init_monitored_train(runtime_root, model_core, gpu=""):  
 	ckpt_dir = os.path.join(runtime_root, model_core.name)
 	conf = model_core.conf

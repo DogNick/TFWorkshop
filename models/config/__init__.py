@@ -32,7 +32,7 @@ SERVER_SCHEDULES = {
             "vae-1024-attn-addmem":{"tf_server":"0.0.0.0:10011","deploy_gpu":0, "max_in":15, "max_out":15, "max_res":15, "beam_splits":[6,6,6,6,6,6,6,6,6,6]}
         },
         {
-            "vae-1024-attn-addmem":{"tf_server":"0.0.0.0:10012","deploy_gpu":1, "max_in":15, "max_out":15, "max_res":10, "beam_splits":[4,4,4,4,4,4,4,4]}
+            "vae-1024-attn-addmem":{"tf_server":"0.0.0.0:10012","deploy_gpu":1, "max_in":15, "max_out":15, "max_res":10, "beam_splits":[6,6,6,6,6,6,6,6,6,6]}
         },
         {
             "vae-reddit-addmem":{"tf_server":"0.0.0.0:10012","deploy_gpu":1, "max_in":15, "max_out":15, "max_res":10, "beam_splits":[4,4,4,4,4,4,4,4]}

@@ -322,11 +322,11 @@ class ModelCore(object):
 				batch_dec_lens.append(np.int32(dec_len))
 				batch_down_wgts.append(down_wgts)
 		self.curr_input_feed = feed_dict = {
-			"VAERNN/enc_inps:0": batch_enc_inps,
-			"VAERNN/enc_lens:0": batch_enc_lens,
-			"VAERNN/dec_inps:0": batch_dec_inps,
-			"VAERNN/dec_lens:0": batch_dec_lens,
-			"VAERNN/down_wgts:0": batch_down_wgts
+			"enc_inps:0": batch_enc_inps,
+			"enc_lens:0": batch_enc_lens,
+			"dec_inps:0": batch_dec_inps,
+			"dec_lens:0": batch_dec_lens,
+			"down_wgts:0": batch_down_wgts
 		}
 		for k, v in feed_dict.items():
 			if not v: 
