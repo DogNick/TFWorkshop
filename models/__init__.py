@@ -18,10 +18,11 @@ from tensorflow.python.ops import variable_scope
 
 #from DynAttnTopicSeq2Seq import *
 from AttnSeq2Seq import *
-from VAERNN import * 
 from VAERNN2 import * 
 from CVAERNN import *
 from AllAttn import *
+from AttnSeq2Seq import *
+from AttnS2SNewDecInit import *
 from KimCNN import *
 from RNNClassification import *
 
@@ -36,6 +37,7 @@ FLAGS = tf.app.flags.FLAGS
 
 # get graph log
 graphlg = log.getLogger("graph")
+trainlg = log.getLogger("train")
 
 magic = {
         #"DeepMatch": DeepMatch,
@@ -47,13 +49,14 @@ magic = {
 
         #"DynAttnTopicSeq2Seq": DynAttnTopicSeq2Seq,
         "AttnSeq2Seq": AttnSeq2Seq,
-        "VAERNN": VAERNN,
         "VAERNN2": VAERNN2,
         "CVAERNN": CVAERNN,
         "RNNClassification": RNNClassification,
         "Postprob": Postprob,
         "Tsinghua": Tsinghua,
         "AllAttn": AllAttn,
+		"AttnS2SNewDecInit":AttnS2SNewDecInit,
+        "AttnSeq2Seq": AttnSeq2Seq,
         "KimCNN":KimCNN
 }
 
@@ -188,13 +191,11 @@ def init_dummy_train(runtime_root, model_core, create_new=True, gpu=0):
 									gpu_options=gpu_options,
 									intra_op_parallelism_threads=32)
 	print "Building..."
-	graph_nodes = model_core.build_all(for_deploy=False, variants="", device="/gpu:%d" % gpu)
-	
-
+	graph_nodes = model_core.build_all(for_deploy=False, variants="", device="/gpu:%d" % int(gpu))
 	print "Creating Data queue..."
 	path = os.path.join(confs[model_core.name].data_dir, "train.data")
 	qr = QueueReader(filename_list=[path], shared_name="temp_queue")
-	model_core.deq_batch_records = qr.batched(batch_size=confs[model_core.name].batch_size, min_after_dequeue=3)
+	model_core.dequeue_data_op = qr.batched(batch_size=confs[model_core.name].batch_size, min_after_dequeue=3)
 	
 	if create_new:
 		ckpt_dir = os.path.join(runtime_root, "null") 

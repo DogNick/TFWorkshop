@@ -74,7 +74,83 @@ def CreateMultiRNNCell(cell_name, num_units, num_layers=1, output_keep_prob=1.0,
 			cells.append(single_cell)
 	return MultiRNNCell(cells) 
 
-class AttnSeq2Seq(ModelCore):
+def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max_mem_size, keep_prob=1.0, addmem=False, dtype=tf.float32, name_scope="attn_cell"):
+	# Attention  
+	with tf.name_scope(name_scope):
+		decoder_cell = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, False, name_scope)
+		if attn_type == "Luo":
+			mechanism = dynamic_attention_wrapper.LuongAttention(num_units=num_units, memory=memory,
+																	max_mem_size=max_mem_size,
+																	memory_sequence_length=mem_lens)
+		elif attn_type == "Bah":
+			mechanism = dynamic_attention_wrapper.BahdanauAttention(num_units=num_units, memory=memory, 
+																	max_mem_size=max_mem_size,
+																	memory_sequence_length=mem_lens)
+		elif attn_type == None:
+			return decoder_cell
+		else:
+			print "Unknown attention stype, must be Luo or Bah" 
+			exit(0)
+		attn_cell = DynamicAttentionWrapper(cell=decoder_cell, attention_mechanism=mechanism,
+												attention_size=num_units, addmem=addmem)
+		return attn_cell
+
+
+def DecStateInit(all_enc_states, decoder_cell, batch_size, init_type="each2each", use_proj=True):
+	# Encoder states for initial state, with vae 
+	with tf.name_scope("DecStateInit"):
+		# get decoder zero_states as a default and shape guide
+		zero_states = decoder_cell.zero_state(dtype=tf.float32, batch_size=batch_size)
+		if isinstance(zero_states, DynamicAttentionWrapperState):
+			dec_zero_states = zero_states.cell_state
+		else:
+			dec_zero_states = zero_states
+		
+		#TODO check all_enc_states
+
+		init_states = []
+		if init_type == "each2each":
+			for i, each in enumerate(dec_zero_states):
+				if i >= len(all_enc_states):	
+					init_states.append(each)
+					continue
+				if use_proj == False:
+					init_states.append(all_enc_states[i])
+					continue
+				enc_state = all_enc_states[i]
+				if isinstance(each, LSTMStateTuple):
+					init_h = tf.layers.dense(enc_state.h, each.h.get_shape()[1], name="proj_l%d_to_h" % i)
+					init_c = tf.layers.dense(enc_state.c, each.c.get_shape()[1], name="proj_l%d_to_c" % i)
+					init_states.append(LSTMStateTuple(init_c, init_h))
+				else:
+					init = tf.layers.dense(enc_state, each.get_shape()[1], name="ToDecShape")
+					init_states.append(init)
+		elif init_type == "all2first":
+			enc_state = tf.concat(all_enc_states, 1)
+			dec_state = dec_zero_states[0]
+			if isinstance(dec_state, LSTMStateTuple):
+				init_h = tf.layers.dense(enc_state, dec_state.h.get_shape()[1], name="ToDecShape")
+				init_c = tf.layers.dense(enc_state, dec_state.c.get_shape()[1], name="ToDecShape")
+				init_states.append(LSTMStateTuple(init_c, init_h))
+			else:
+				init = tf.layers.dense(enc_state, dec_state.get_shape()[1], name="ToDecShape")
+				init_states.append(init)
+			init_states.extend(dec_zero_states[1:])
+		elif init_type == "allzeros":
+			init_states.dec_zero_states
+		else:	
+			print "init type %s unknonw !!!" % init_type
+			exit(0)
+
+		if isinstance(decoder_cell,DynamicAttentionWrapper):
+			zero_states = DynamicAttentionWrapperState(tuple(init_states), zero_states.attention, zero_states.newmem, zero_states.alignments)
+		else:
+			zero_states = tuple(init_states)
+		
+		return zero_states
+
+
+class AttnS2SNewDecInit(ModelCore):
 	"""
 		standard attention seq2seq
 	"""
@@ -89,6 +165,7 @@ class AttnSeq2Seq(ModelCore):
 		self.beam_size = 1 if (not for_deploy or variants=="score") else sum(self.conf.beam_splits)
 		conf.keep_prob = conf.keep_prob if not for_deploy else 1.0
 
+		
 		
 		graphlg.info("Creating placeholders...")
 		self.enc_str_inps = tf.placeholder(tf.string, shape=(None, conf.input_max_len), name="enc_inps") 
@@ -114,10 +191,6 @@ class AttnSeq2Seq(ModelCore):
 														 checkpoint=True)
 			self.enc_inps = self.in_table.lookup(self.enc_str_inps)
 			self.dec_inps = self.in_table.lookup(self.dec_str_inps)
-		
-		if for_deploy:
-			self.enc_inps = tf.Print(self.enc_inps, [self.enc_inps], message="enc ids", summarize=10000)
-			self.enc_lens = tf.Print(self.enc_lens, [self.enc_lens], message="enc lens", summarize=10000)
 
 		# Create encode graph and get attn states
 		graphlg.info("Creating embeddings and embedding enc_inps.")
@@ -129,31 +202,6 @@ class AttnSeq2Seq(ModelCore):
 			with ops.device("/cpu:0"):
 				self.emb_inps = embedding_lookup_unique(self.embedding, self.enc_inps)
 				emb_dec_inps = embedding_lookup_unique(self.embedding, dec_inps)
-
-		graphlg.info("Creating dynamic rnn...")
-		self.enc_outs, self.enc_states, mem_size, enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
-																			  self.emb_inps, self.enc_lens, keep_prob=self.conf.keep_prob,
-																			  bidi=conf.bidirectional, name_scope="DynRNNEncoder")
-		enc_state = self.enc_states[-1]
-
-		with tf.name_scope("ShapeToDecInit"):
-			final_enc_states = [enc_state]
-			with tf.name_scope("ShapeToBeam") as scope: 
-				memory = tf.reshape(tf.tile(self.enc_outs, [1, 1, self.beam_size]), [-1, conf.input_max_len, mem_size])
-				memory_lens = tf.squeeze(tf.reshape(tf.tile(tf.expand_dims(self.enc_lens, 1), [1, self.beam_size]), [-1, 1]), 1)
-				def _to_beam(t):
-					return tf.reshape(tf.tile(t, [1, self.beam_size]), [-1, mem_size])	
-				beam_init_states = tf.contrib.framework.nest.map_structure(_to_beam, final_enc_states)
-				beam_zero_states = tf.contrib.framework.nest.map_structure(tf.zeros_like, beam_init_states) 
-
-			# Construct init states for decoder
-			init_states = []
-			for i, each in enumerate(self.enc_states):
-				if i == 0:
-					init_states.extend(beam_init_states)
-				else:
-					init_states.extend(beam_zero_states)
-
 		# output projector (w, b)
 		with tf.variable_scope("OutProj"):
 			if conf.out_layer_size:
@@ -164,45 +212,46 @@ class AttnSeq2Seq(ModelCore):
 				w = tf.get_variable("proj_w", [conf.num_units, conf.output_vocab_size], dtype=dtype)
 			b = tf.get_variable("proj_b", [conf.output_vocab_size], dtype=dtype)
 
-		with tf.name_scope("DynRNNDecode") as scope:
-			decoder_cell = CreateMultiRNNCell(conf.cell_model, mem_size, conf.num_layers, conf.output_keep_prob, name_scope=scope)
-			max_mem_size = self.conf.input_max_len + self.conf.output_max_len + 2
-			if conf.attention == "Luo":
-				mechanism = dynamic_attention_wrapper.LuongAttention(num_units=mem_size, memory=memory, max_mem_size=max_mem_size,
-																		memory_sequence_length=memory_lens)
-			elif conf.attention == "Bah":
-				mechanism = dynamic_attention_wrapper.BahdanauAttention(num_units=mem_size, memory=memory, max_mem_size=max_mem_size,
-																		memory_sequence_length=memory_lens)
-			else:
-				print "Unknown attention stype, must be Luo or Bah" 
-				exit(0)
 
-			attn_cell = DynamicAttentionWrapper(cell=decoder_cell, attention_mechanism=mechanism,
-											attention_size=mem_size, addmem=self.conf.addmem)
-			
-			with tf.name_scope("InitStates") as init_state_scope:
-				batch_size = tf.shape(self.enc_outs)[0]
-				zero_attn_states = attn_cell.zero_state(dtype=tf.float32, batch_size=batch_size * self.beam_size)
-				zero_attn_states = DynamicAttentionWrapperState(tuple(init_states), zero_attn_states.attention, zero_attn_states.newmem, zero_attn_states.alignments)
-				if not for_deploy:
-					dec_init_state = zero_attn_states
-				else:
-					dec_init_state = beam_decoder.BeamState(tf.zeros([batch_size * self.beam_size]), zero_attn_states, tf.zeros([batch_size * self.beam_size], tf.int32))
-				graphlg.info("Creating out_proj...") 
+		graphlg.info("Creating dynamic rnn...")
+		self.enc_outs, self.enc_states, mem_size, enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
+																			  self.emb_inps, self.enc_lens, keep_prob=conf.keep_prob,
+																			  bidi=conf.bidirectional, name_scope="DynRNNEncoder")
+		batch_size = tf.shape(self.enc_outs)[0]
+		# to modify the output states of all encoder layers for dec init
+		final_enc_states = self.enc_states
+
+		
+
+		with tf.name_scope("DynRNNDecode") as scope:
+			with tf.name_scope("ShapeToBeam") as scope: 
+				beam_memory = tf.reshape(tf.tile(self.enc_outs, [1, 1, self.beam_size]), [-1, conf.input_max_len, mem_size])
+				beam_memory_lens = tf.squeeze(tf.reshape(tf.tile(tf.expand_dims(self.enc_lens, 1), [1, self.beam_size]), [-1, 1]), 1)
+				def _to_beam(t):
+					return tf.reshape(tf.tile(t, [1, self.beam_size]), [-1, int(t.get_shape()[1])])	
+				beam_init_states = tf.contrib.framework.nest.map_structure(_to_beam, final_enc_states)
+
+			max_mem_size = self.conf.input_max_len + self.conf.output_max_len + 2
+			cell = AttnCell(cell_model=conf.cell_model, num_units=mem_size, num_layers=conf.num_layers,
+							attn_type=self.conf.attention, memory=beam_memory, mem_lens=beam_memory_lens,
+							max_mem_size=max_mem_size, addmem=self.conf.addmem, keep_prob=conf.keep_prob,
+							dtype=tf.float32, name_scope="AttnCell")
+
+			dec_init_state = DecStateInit(all_enc_states=beam_init_states, decoder_cell=cell, batch_size=batch_size * self.beam_size, init_type="each2each")
 
 			if not for_deploy: 
 				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, 
 																   embedding=self.embedding, sampling_probability=self.conf.sample_prob,
 																   out_proj=(w, b))
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
-				my_decoder = basic_decoder.BasicDecoder(cell=attn_cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
+				my_decoder = basic_decoder.BasicDecoder(cell=cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, impute_finished=True, maximum_iterations=conf.output_max_len + 1, scope=scope)
 			elif variants == "score":
 				dec_init_state = zero_attn_states
 				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, embedding=self.embedding, sampling_probability=0.0,
 																   out_proj=(w, b))
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
-				my_decoder = score_decoder.ScoreDecoder(cell=attn_cell, helper=hp_train, out_proj=(w, b), initial_state=dec_init_state, output_layer=output_layer)
+				my_decoder = score_decoder.ScoreDecoder(cell=cell, helper=hp_train, out_proj=(w, b), initial_state=dec_init_state, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len, impute_finished=False)
 			else:
 				hp_infer = helper.GreedyEmbeddingHelper(embedding=self.embedding,
@@ -210,7 +259,7 @@ class AttnSeq2Seq(ModelCore):
 														end_token=EOS_ID, out_proj=(w, b))
 
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
-				my_decoder = beam_decoder.BeamDecoder(cell=attn_cell, helper=hp_infer, out_proj=(w, b), initial_state=dec_init_state,
+				my_decoder = beam_decoder.BeamDecoder(cell=cell, helper=hp_infer, out_proj=(w, b), initial_state=dec_init_state,
 														beam_splits=self.conf.beam_splits, max_res_num=self.conf.max_res_num, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len, impute_finished=True)
 
@@ -281,7 +330,7 @@ class AttnSeq2Seq(ModelCore):
 			beam_end_probs = tf.reshape(tf.transpose(beam_end_probs, [0, 2, 1]), [-1, L])
 
 			## Creating tail_ids 
-			batch_size = tf.Print(batch_size, [batch_size], message="batch size")
+			batch_size = tf.Print(batch_size, [batch_size], message="VAERNN2 batch")
 			batch_offset = tf.expand_dims(tf.cumsum(tf.ones([batch_size, self.beam_size], dtype=tf.int32) * self.beam_size, axis=0, exclusive=True), 2)
 			offset2 = tf.expand_dims(tf.cumsum(tf.ones([batch_size, self.beam_size * 2], dtype=tf.int32) * self.beam_size, axis=0, exclusive=True), 2)
 

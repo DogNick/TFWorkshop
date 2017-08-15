@@ -76,9 +76,48 @@
 #sleep 1.0
 #sh job.sh see vae-reddit-addmem 
 
-sh job.sh create vae2-opensubtitle single 0 2
+#sh job.sh create vae2-addmem-weibo single 0 0 
+#sleep 1.0
+#sh job.sh see vae2-addmem-weibo
+
+#sh job.sh create vae2-opensubtitle single 0 2
+#sleep 1.0
+#sh job.sh see vae2-opensubtitle
+
+#sh job.sh create news2s-opensubtitle_gt3 single 0 6 
+#sleep 1.0
+#sh job.sh see news2s-opensubtitle_gt3 
+
+sh job.sh create news2s-twitter single 0 7 
 sleep 1.0
-sh job.sh see vae2-opensubtitle
+sh job.sh see news2s-twitter
+
+#sh job.sh create cvae-opensubtitle single 0 1 
+#sleep 1.0
+#sh job.sh see cvae-opensubtitle
+
+
+#sh job.sh create cvae-no-attn-opensubtitle_gt3 single 0 3 
+#sleep 1.0
+#sh job.sh see cvae-no-attn-opensubtitle_gt3 
+
+
+#sh job.sh create cvae-noattn-opensubtitle_gt3 single 0 3 
+#sleep 1.0
+#sh job.sh see cvae-noattn-opensubtitle_gt3 
+
+#sh job.sh create attns2s-opensubtitle_gt3 single 0 4 
+#sleep 1.0
+#sh job.sh see attns2s-opensubtitle_gt3 
+
+#sh job.sh create attns2s-twitter single 0 5
+#sleep 1.0
+#sh job.sh see attns2s-twitter 
+
+#sh job.sh create vae3-opensubtitle single 0 1
+#sleep 1.0
+#sh job.sh see vae3-opensubtitle
+
 #sh job.sh create cvae-simpleprior-reddit-addmem single 0 1
 #sleep 1.0
 #sh job.sh see cvae-simpleprior-reddit-addmem

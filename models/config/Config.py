@@ -27,7 +27,7 @@ class Config:
         self.attention = "Luo"
         self.out_layer_size = None
         self.use_peephole = False
-        self.output_keep_prob = 1.0
+        self.keep_prob = 0.8 
         self.bidirectional = True
         self.num_samples = 512
         self.beam_splits = [1] 
@@ -42,6 +42,7 @@ class Config:
         self.stddev = 1.0
         self.output_max_len = 0 
         self.input_max_len = 0 
+        self.sample_prob = 0.0 
 
         # DISTRIBUTED 
         self.cluster = None

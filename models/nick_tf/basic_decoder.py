@@ -33,7 +33,9 @@ from tensorflow.python.layers import base as layers_base
 from tensorflow.python.util import nest
 from tensorflow.python.framework import constant_op
 from tensorflow.python.ops import array_ops
+import dynamic_attention_wrapper
 
+DynamicAttentionWrapper = dynamic_attention_wrapper.DynamicAttentionWrapper
 
 __all__ = [
     "BasicDecoderOutput",
@@ -112,7 +114,10 @@ class BasicDecoder(decoder.Decoder):
                                 self.batch_size)
   @property
   def state_shape(self):
-      return self._cell.state_shape
+      if isinstance(self._cell, DynamicAttentionWrapper):
+        return self._cell.state_shape
+      else:
+        return nest.map_structure(lambda s: tf.TensorShape([None, s]), self._cell.state_size)
 
 
   def _rnn_output_size(self):
