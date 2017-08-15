@@ -74,14 +74,14 @@ def CreateMultiRNNCell(cell_name, num_units, num_layers=1, output_keep_prob=1.0,
 			cells.append(single_cell)
 	return MultiRNNCell(cells) 
 
-def CreateVAE(states, enc_latent_dim, stddev, reuse=False, dtype=tf.float32, name_scope=None):
+def CreateVAE(states, enc_latent_dim, mu_prior=None, logvar_prior=None, reuse=False, dtype=tf.float32, name_scope=None):
 	with tf.name_scope(name_scope) as scope:
 		graphlg.info("Creating latent z for encoder states") 
 		all_states = []
 		for each in states:
 			all_states.extend(list(each))
 		h_state = tf.concat(all_states, 1, name="concat_states")
-
+		epsilon = tf.random_normal([tf.shape(h_state)[0], enc_latent_dim])
 		with tf.name_scope("EncToLatent"):
 			W_enc_hidden_mu = tf.Variable(tf.random_normal([int(h_state.get_shape()[1]), enc_latent_dim]),name="w_enc_hidden_mu")
 			b_enc_hidden_mu = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_mu") 
@@ -89,31 +89,19 @@ def CreateVAE(states, enc_latent_dim, stddev, reuse=False, dtype=tf.float32, nam
 			b_enc_hidden_logvar = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_logvar") 
 			# Should there be any non-linearty?
 			# A normal sampler
-			with tf.name_scope("Sample"):
-				mu_enc = tf.matmul(h_state, W_enc_hidden_mu) + b_enc_hidden_mu
-				logvar_enc = tf.matmul(h_state, W_enc_hidden_logvar) + b_enc_hidden_logvar
-				epsilon = tf.random_normal(tf.shape(logvar_enc), name="epsilon", stddev=stddev)
-				z = mu_enc + tf.exp(0.5 * logvar_enc) * epsilon
+			mu_enc = tf.tanh(tf.matmul(h_state, W_enc_hidden_mu) + b_enc_hidden_mu)
+			logvar_enc = tf.matmul(h_state, W_enc_hidden_logvar) + b_enc_hidden_logvar
+			z = mu_enc + tf.exp(0.5 * logvar_enc) * epsilon
 
-		def _dec_z(s):
-			# Should this z be concatenated by original state ?
-			#dim = int(s.shape[1]) + enc_latent_dim 
-			#z = tf.concat([z, s], 1)
-			with tf.name_scope("DecFromLatent"):
-				dim = int(s.shape[1])
-				W_dec_z = tf.Variable(tf.random_normal([enc_latent_dim, dim]), name="w_dec_z")
-				b_dec_z = tf.Variable(tf.random_normal([dim]), name="b_enc_z") 
-				name = re.sub(":", "_", re.split("/", s.name)[-1])
-				dec_z = tf.tanh(tf.matmul(z, W_dec_z) + b_dec_z)
-				return dec_z
+		if mu_prior == None:
+			mu_prior = tf.zeros_like(epsilon)
+		if logvar_prior == None:
+			logvar_prior = tf.zeros_like(epsilon)
 
 		# Should this z be concatenated by original state ?
-		vae_states = tf.contrib.framework.nest.map_structure(_dec_z, states) 
-
 		with tf.name_scope("KLD"):
-			KLD = -0.5 * tf.reduce_sum(1 + logvar_enc - tf.pow(mu_enc, 2) - tf.exp(logvar_enc), axis = 1)
-	return vae_states, KLD, None 
-
+			KLD = -0.5 * tf.reduce_sum(1 + logvar_enc - logvar_prior - (tf.pow(mu_enc - mu_prior, 2) + tf.exp(logvar_enc))/tf.exp(logvar_prior), axis = 1)
+	return z, KLD, None 
 
 class VAERNN2(ModelCore):
 	"""This is a modified vae
@@ -176,27 +164,32 @@ class VAERNN2(ModelCore):
 																			  bidi=conf.bidirectional, name_scope="DynRNNEncoder")
 		# Do vae on the state of the last layer of the encoder 
 		enc_state = self.enc_states[-1]
-		vae_states, KLD, l2 = CreateVAE([enc_state], self.conf.enc_latent_dim, stddev=self.conf.stddev, name_scope="VAE")
-		zs = []
-		for each in vae_states:
-			each = list(each)
-			zs.append(tf.concat(each, 1))
-		z = tf.concat(zs, 1)
-		with tf.name_scope("ShapeToBeam") as scope: 
-			memory = tf.reshape(tf.tile(self.enc_outs, [1, 1, self.beam_size]), [-1, conf.input_max_len, mem_size])
-			memory_lens = tf.squeeze(tf.reshape(tf.tile(tf.expand_dims(self.enc_lens, 1), [1, self.beam_size]), [-1, 1]), 1)
-			def _to_beam(t):
-				return tf.reshape(tf.tile(t, [1, self.beam_size]), [-1, mem_size])	
-			beam_vae_states = tf.contrib.framework.nest.map_structure(_to_beam, vae_states)
-			beam_zero_states = tf.contrib.framework.nest.map_structure(tf.zeros_like, beam_vae_states) 
-
-		# Construct init states for decoder
-		init_states = []
-		for i, each in enumerate(self.enc_states):
-			if i == 0:
-				init_states.extend(beam_vae_states)
+		z, KLD, l2 = CreateVAE([enc_state], self.conf.enc_latent_dim, name_scope="VAE")
+		with tf.name_scope("ShapeToDecInit"):
+			if isinstance(enc_state, LSTMStateTuple):
+				layer = layers_core.Dense(enc_state.c.shape[1], use_bias=False)
+				new_c = layer(tf.concat([z, enc_state.c], 1))
+				vae_states = [LSTMStateTuple(new_c, enc_state.h)]
 			else:
-				init_states.extend(beam_zero_states)
+				new_state_layer = layers_core.Dense(enc_state.shape[1], use_bias=False)
+				new_state = layer(tf.concat([z, enc_state], 1))
+				vae_states = [new_state]
+
+			with tf.name_scope("ShapeToBeam") as scope: 
+				memory = tf.reshape(tf.tile(self.enc_outs, [1, 1, self.beam_size]), [-1, conf.input_max_len, mem_size])
+				memory_lens = tf.squeeze(tf.reshape(tf.tile(tf.expand_dims(self.enc_lens, 1), [1, self.beam_size]), [-1, 1]), 1)
+				def _to_beam(t):
+					return tf.reshape(tf.tile(t, [1, self.beam_size]), [-1, mem_size])	
+				beam_vae_states = tf.contrib.framework.nest.map_structure(_to_beam, vae_states)
+				beam_zero_states = tf.contrib.framework.nest.map_structure(tf.zeros_like, beam_vae_states) 
+
+			# Construct init states for decoder
+			init_states = []
+			for i, each in enumerate(self.enc_states):
+				if i == 0:
+					init_states.extend(beam_vae_states)
+				else:
+					init_states.extend(beam_zero_states)
 
 		# output projector (w, b)
 		with tf.variable_scope("OutProj"):
@@ -236,7 +229,7 @@ class VAERNN2(ModelCore):
 
 			if not for_deploy: 
 				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, 
-																   embedding=self.embedding, sampling_probability=0.0,
+																   embedding=self.embedding, sampling_probability=self.conf.sample_prob,
 																   out_proj=(w, b))
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
 				my_decoder = basic_decoder.BasicDecoder(cell=attn_cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
@@ -388,8 +381,8 @@ class VAERNN2(ModelCore):
 		var_map = {}
 		for each in var_list:
 			name = each.name
-			name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
-			name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
+			#name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
+			#name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
 			#name = re.sub("gru_cell/bias", "gru_cell/biases", name)
 			#name = re.sub("gru_cell/kernel", "gru_cell/weights", name)
 			#name = re.sub("gates/bias", "gates/biases", name)

@@ -90,6 +90,7 @@ class NickSummaryHook(session_run_hook.SessionRunHook):
 
 	def after_run(self, run_context, run_values):
 		self._step_time += (time.time() - self._last_time) / self._summary_steps
+		self._loss += run_values.results["loss"] * 1.0 / self._summary_steps
 		# check weather to print train info and do summarization
 		if self._timer_sum and self._should_sum:
 			ppx = math.exp(self._loss) if self._loss < 300 else float('inf')
@@ -113,7 +114,7 @@ class NickSummaryHook(session_run_hook.SessionRunHook):
 					if isinstance(out, dict):
 						for k, v in out.items():
 							trainlg.debug("[OUT-%s][%d] %s" % (k, idx, " ".join([str(e) for e in v[idx]])))
-					elif isinstance(out, list):
+					else:
 						trainlg.debug("[OUT][%d] %s" % (idx, " ".join([str(e) for e in out[idx]])))
 							
 							

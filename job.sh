@@ -250,8 +250,13 @@ then
 elif [ "$1"x = "visualize"x ]
 then
     RUNTIME_NAME=$2
-    VISUAL_DATA=$3
-	GPU=$4
+	GPU=$3
+    VISUAL_DATA=$4
+	MAX_LINE=$5
+	if [ "$5"x = ""x ]
+	then
+		MAX_LINE=-1
+	fi
     echo "Visualization for $RUNTIME_NAME form data $VISUAL_DATA ..."
-    python workshop.py --cmd=visualize --conf_name=$RUNTIME_NAME --gpu=$GPU --visualize_file=$VISUAL_DATA --train_root=$TRAIN_ROOT
+    python workshop.py --cmd=visualize --conf_name=$RUNTIME_NAME --gpu=$GPU --visualize_file=$VISUAL_DATA --max_line=$MAX_LINE --train_root=$TRAIN_ROOT
 fi

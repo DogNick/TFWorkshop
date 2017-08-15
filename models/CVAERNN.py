@@ -33,28 +33,28 @@ DynamicAttentionWrapper = dynamic_attention_wrapper.DynamicAttentionWrapper
 DynamicAttentionWrapperState = dynamic_attention_wrapper.DynamicAttentionWrapperState 
 Bahdanau = dynamic_attention_wrapper.BahdanauAttention
 Luong = dynamic_attention_wrapper.LuongAttention
-
-def CreateMultiRNNCell(cell_name, num_units, num_layers=1, output_keep_prob=1.0, reuse=False):
-	cells = []
-	for i in range(num_layers):
-		if cell_name == "GRUCell":
-			single_cell = GRUCell(num_units=num_units, reuse=reuse)
-		elif cell_name == "LSTMCell":
-			single_cell = LSTMCell(num_units=num_units, reuse=reuse)
-		else:
-			graphlg.info("Unknown Cell type !")
-			exit(0)
-		if output_keep_prob < 1.0:
-			single_cell = tf.contrib.rnn.DropoutWrapper(single_cell, output_keep_prob=output_keep_prob) 
-			graphlg.info("Layer %d, Dropout used: output_keep_prob %f" % (i, output_keep_prob))
-
-		#single_cell = DeviceWrapper(ResidualWrapper(single_cell), device='/gpu:%d' % i)
-		#single_cell = DeviceWrapper(single_cell, device='/gpu:%d' % i)
-
-		cells.append(single_cell)
+def CreateMultiRNNCell(cell_name, num_units, num_layers=1, output_keep_prob=1.0, reuse=False, name_scope=None):
+	with tf.variable_scope(name_scope):
+		cells = []
+		for i in range(num_layers):
+			if cell_name == "GRUCell":
+				single_cell = GRUCell(num_units=num_units, reuse=reuse)
+			elif cell_name == "LSTMCell":
+				single_cell = LSTMCell(num_units=num_units, reuse=reuse)
+			else:
+				graphlg.info("Unknown Cell type !")
+				exit(0)
+			if output_keep_prob < 1.0:
+				single_cell = tf.contrib.rnn.DropoutWrapper(single_cell, output_keep_prob=output_keep_prob) 
+				graphlg.info("Layer %d, Dropout used: output_keep_prob %f" % (i, output_keep_prob))
+			cells.append(single_cell)
 	return MultiRNNCell(cells) 
 
-def PriorNet(state, hidden_units, enc_latent_dim, stddev=1.0, prior_type="mlp"):
+def PriorNet(states, hidden_units, enc_latent_dim, stddev=1.0, prior_type="mlp"):
+	all_states = []
+	for each in states:
+		all_states.extend(list(each))
+	state = tf.concat(all_states, 1, name="concat_states")
 	epsilon = tf.random_normal([tf.shape(state)[0], enc_latent_dim], name="epsilon", stddev=stddev)
 	if prior_type == "mlp":
 		mu_layer1 = layers_core.Dense(hidden_units, use_bias=True, name="mu_layer1", activation=None)
@@ -72,19 +72,18 @@ def PriorNet(state, hidden_units, enc_latent_dim, stddev=1.0, prior_type="mlp"):
 		z = mu_prior + tf.exp(0.5 * logvar_prior) * epsilon
 	else:
 		z = epsilon
-		mu_prior = 0
-		logvar_prior = 2 * tf.log(stddev)
+		mu_prior = tf.zeros_like(epsilon)
+		logvar_prior = 2 * tf.log(stddev) * tf.ones_like(epsilon)
 	return z, mu_prior, logvar_prior 
 
-
-def CreateVAE(states, enc_latent_dim, stddev, reuse=False, dtype=tf.float32, name_scope=None):
+def CreateVAE(states, enc_latent_dim, mu_prior=None, logvar_prior=None, reuse=False, dtype=tf.float32, name_scope=None):
 	with tf.name_scope(name_scope) as scope:
 		graphlg.info("Creating latent z for encoder states") 
 		all_states = []
 		for each in states:
 			all_states.extend(list(each))
 		h_state = tf.concat(all_states, 1, name="concat_states")
-
+		epsilon = tf.random_normal([tf.shape(h_state)[0], enc_latent_dim])
 		with tf.name_scope("EncToLatent"):
 			W_enc_hidden_mu = tf.Variable(tf.random_normal([int(h_state.get_shape()[1]), enc_latent_dim]),name="w_enc_hidden_mu")
 			b_enc_hidden_mu = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_mu") 
@@ -92,30 +91,19 @@ def CreateVAE(states, enc_latent_dim, stddev, reuse=False, dtype=tf.float32, nam
 			b_enc_hidden_logvar = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_logvar") 
 			# Should there be any non-linearty?
 			# A normal sampler
-			with tf.name_scope("Sample"):
-				mu_enc = tf.matmul(h_state, W_enc_hidden_mu) + b_enc_hidden_mu
-				logvar_enc = tf.matmul(h_state, W_enc_hidden_logvar) + b_enc_hidden_logvar
-				epsilon = tf.random_normal(tf.shape(logvar_enc), name="epsilon", stddev=stddev)
-				z = mu_enc + tf.exp(0.5 * logvar_enc) * epsilon
+			mu_enc = tf.tanh(tf.matmul(h_state, W_enc_hidden_mu) + b_enc_hidden_mu)
+			logvar_enc = tf.matmul(h_state, W_enc_hidden_logvar) + b_enc_hidden_logvar
+			z = mu_enc + tf.exp(0.5 * logvar_enc) * epsilon
 
-		def _dec_z(s):
-			# Should this z be concatenated by original state ?
-			#dim = int(s.shape[1]) + enc_latent_dim 
-			#z = tf.concat([z, s], 1)
-			with tf.name_scope("DecFromLatent"):
-				dim = int(s.shape[1])
-				W_dec_z = tf.Variable(tf.random_normal([enc_latent_dim, dim]), name="w_dec_z")
-				b_dec_z = tf.Variable(tf.random_normal([dim]), name="b_enc_z") 
-				name = re.sub(":", "_", re.split("/", s.name)[-1])
-				dec_z = tf.tanh(tf.matmul(z, W_dec_z) + b_dec_z)
-				return dec_z
+		if mu_prior == None:
+			mu_prior = tf.zeros_like(epsilon)
+		if logvar_prior == None:
+			logvar_prior = tf.zeros_like(epsilon)
 
 		# Should this z be concatenated by original state ?
-		vae_states = tf.contrib.framework.nest.map_structure(_dec_z, states) 
-
 		with tf.name_scope("KLD"):
-			KLD = -0.5 * tf.reduce_sum(1 + logvar_enc - tf.pow(mu_enc, 2) - tf.exp(logvar_enc), axis = 1)
-	return vae_states, KLD, None 
+			KLD = -0.5 * tf.reduce_sum(1 + logvar_enc - logvar_prior - (tf.pow(mu_enc - mu_prior, 2) + tf.exp(logvar_enc))/tf.exp(logvar_prior), axis = 1)
+	return z, KLD, None 
 
 def DynRNN(cell_model, num_units, num_layers, emb_inps, enc_lens, keep_prob=1.0, bidi=False, name_scope="encoder", dtype=tf.float32):
 	with tf.name_scope(name_scope) as scope:
@@ -144,61 +132,72 @@ def DynRNN(cell_model, num_units, num_layers, emb_inps, enc_lens, keep_prob=1.0,
 			enc_outs, enc_states = dynamic_rnn(cell=cell,
 											   inputs=emb_inps,
 											   sequence_length=enc_lens,
-											   parallel_iterations=16,
+											   parallel_iterations=1,
 											   dtype=dtype,
 											   scope=name_scope)
 			mem_size = num_units
 			enc_state_size = num_units
 	return enc_outs, enc_states, mem_size, enc_state_size
 
-def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max_mem_size, keep_prob=1.0, addmem=False, dtype=tf.float32):
+def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max_mem_size, keep_prob=1.0, addmem=False, dtype=tf.float32, name_scope="attn_cell"):
 	# Attention  
-	with variable_scope.variable_scope("decoder", dtype=dtype) as scope: 
-		decoder_cell = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob)
+	with tf.name_scope(name_scope):
+		decoder_cell = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, False, name_scope)
+		if attn_type == "Luo":
+			mechanism = dynamic_attention_wrapper.LuongAttention(num_units=num_units, memory=memory,
+																	max_mem_size=max_mem_size,
+																	memory_sequence_length=mem_lens)
+		elif attn_type == "Bah":
+			mechanism = dynamic_attention_wrapper.BahdanauAttention(num_units=num_units, memory=memory, 
+																	max_mem_size=max_mem_size,
+																	memory_sequence_length=mem_lens)
+		elif attn_type == None:
+			return decoder_cell
+		else:
+			print "Unknown attention stype, must be Luo or Bah" 
+			exit(0)
+		attn_cell = DynamicAttentionWrapper(cell=decoder_cell, attention_mechanism=mechanism,
+												attention_size=num_units, addmem=addmem)
+		return attn_cell
 
-	if attn_type == "Luo":
-		mechanism = dynamic_attention_wrapper.LuongAttention(num_units=num_units, memory=memory, max_mem_size=max_mem_size,
-																memory_sequence_length=mem_lens)
-	elif attn_type == "Bah":
-		mechanism = dynamic_attention_wrapper.BahdanauAttention(num_units=num_units, memory=memory, max_mem_size=max_mem_size,
-																memory_sequence_length=mem_lens)
-	elif attn_type == None:
-		return decoder_cell
-	else:
-		print "Unknown attention stype, must be Luo or Bah" 
-		exit(0)
-	attn_cell = DynamicAttentionWrapper(cell=decoder_cell, attention_mechanism=mechanism,
-											attention_size=num_units, addmem=addmem)
-	return attn_cell
 
-
-def DecStateInit(thinking_state, num_units, decoder_cell, batch_size, beam_size):
+def DecStateInit(raw_states, decoder_cell, batch_size):
 	# Encoder states for initial state, with vae 
-	zero_states = decoder_cell.zero_state(dtype=tf.float32, batch_size=batch_size * beam_size)
+	with tf.name_scope("DecStateInit"):
+		all_states = []
+		for each in raw_states:
+			if isinstance(each, LSTMStateTuple):
+				each = tf.concat([each.c, each.h], 1)
+			all_states.append(each)
 
-	if isinstance(zero_states, DynamicAttentionWrapperState):
-		cell_states = zero_states.cell_state
-	else:
-		cell_states = zero_states
+		concat_all_state = tf.concat(all_states, 1)
 
-	init_states = []
-	for i, each in enumerate(cell_states):
-	  if i > 0:
-		init_states.append(each)
-	  elif isinstance(each, LSTMStateTuple):
-		new_c = tf.reshape(tf.concat([each.c], 1), [-1, num_units])
-		new_h = tf.reshape(tf.concat([thinking_state] * beam_size, 1), [-1, num_units])
-		init_states.append(LSTMStateTuple(new_c, new_h))
-	  else:
-		state = tf.reshape(tf.concat([thinking_state] * beam_size, 1), [-1, num_units])
-		init_states.append(state)
+		zero_states = decoder_cell.zero_state(dtype=tf.float32, batch_size=batch_size)
 
-	if isinstance(decoder_cell,DynamicAttentionWrapper):
-		zero_states = DynamicAttentionWrapperState(tuple(init_states), zero_states.attention, zero_states.newmem, zero_states.alignments)
-	else:
-		zero_states = tuple(init_states)
+		if isinstance(zero_states, DynamicAttentionWrapperState):
+			cell_states = zero_states.cell_state
+		else:
+			cell_states = zero_states
 
-	return zero_states
+		init_states = []
+		for i, each in enumerate(cell_states):
+			if i > 0:
+				init_states.append(each)
+			else:
+				init_h = tf.layers.dense(concat_all_state, each.h.get_shape()[1], name="ToDecShape")
+
+				if isinstance(each, LSTMStateTuple):
+					state = LSTMStateTuple(each.c, init_h)
+				else:
+					state = init_h 
+				init_states.append(state)
+	
+		if isinstance(decoder_cell,DynamicAttentionWrapper):
+			zero_states = DynamicAttentionWrapperState(tuple(init_states), zero_states.attention, zero_states.newmem, zero_states.alignments)
+		else:
+			zero_states = tuple(init_states)
+		
+		return zero_states
 
 
 class CVAERNN(ModelCore):
@@ -260,71 +259,74 @@ class CVAERNN(ModelCore):
 		self.enc_outs, self.enc_states, mem_size, enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
 																		self.emb_inps, self.enc_lens, keep_prob=1.0,
 																		bidi=conf.bidirectional, name_scope="DynRNNEncoder")
-		# Do vae on the state of the last layer of the encoder 
-
-		memory = tf.reshape(tf.concat([self.enc_outs] * self.beam_size, 2), [-1, conf.input_max_len, mem_size])
-		memory_lens = tf.squeeze(tf.reshape(tf.concat([tf.expand_dims(self.enc_lens, 1)] * self.beam_size, 1), [-1, 1]), 1)
 		batch_size = tf.shape(self.enc_outs)[0]
 
-		x_s = self.enc_states[-1].h if isinstance(self.enc_states[-1], LSTMStateTuple) else self.enc_states[-1]
+		if self.conf.attention:
+			init_h = self.enc_states[-1].h
+		else:
+			mechanism = dynamic_attention_wrapper.LuongAttention(num_units=conf.num_units, memory=self.enc_outs, 
+																	max_mem_size=self.conf.input_max_len,
+																	memory_sequence_length=self.enc_lens)
+			init_h = mechanism(self.enc_states[-1].h)
 
-		# Not sure, its's only for the gradient bug fixup 
-		x_s = x_s + tf.reduce_sum(self.enc_outs, 1)
-		KLD = 0.0
+		if isinstance(self.enc_states[-1], LSTMStateTuple):
+			enc_state = LSTMStateTuple(self.enc_states[-1].c, init_h) 
+
 		hidden_units = int(math.sqrt(mem_size * self.conf.enc_latent_dim))
+		z, mu_prior, logvar_prior = PriorNet([enc_state], hidden_units, self.conf.enc_latent_dim, stddev=1.0, prior_type=conf.prior_type)
 
+		KLD = 0.0
 		# Different graph for training and inference time 
 		if not for_deploy:
 			# Y inputs for posterior z 
-			y_emb_inps = tf.slice(emb_dec_inps, [0, 1, 0], [-1, -1, -1])
-			y_enc_outs, y_enc_states, y_mem_size, y_enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
-																		y_emb_inps, self.dec_lens, keep_prob=1.0, bidi=False, name_scope="y_enc")
-			#y_memory = tf.reshape(tf.concat([self.enc_outs] * self.beam_size, 2), [-1, conf.input_max_len, mem_size])
-			#y_memory_lens = tf.squeeze(tf.reshape(tf.concat([tf.expand_dims(self.enc_lens, 1)] * self.beam_size, 1), [-1, 1]), 1)
-			y_s = y_enc_states[-1].h if isinstance(y_enc_states[-1], LSTMStateTuple) else y_enc_states[-1]
+			with tf.name_scope("YEncode"):
+				y_emb_inps = tf.slice(emb_dec_inps, [0, 1, 0], [-1, -1, -1])
+				y_enc_outs, y_enc_states, y_mem_size, y_enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
+																			y_emb_inps, self.dec_lens, keep_prob=1.0, bidi=False, name_scope="y_enc")
+				y_enc_state = y_enc_states[-1]
 
-			enc_layer = layers_core.Dense(mem_size, use_bias=True, name="enc_x_y", activation=tf.tanh)
-			x_y_enc = enc_layer(tf.concat([x_s, y_s], 1))
-
-			_, mu_prior, logvar_prior = PriorNet(x_s, hidden_units, self.conf.enc_latent_dim, stddev=1.0, prior_type=conf.prior_type)
-			z, KLD, l2 = CreateVAE(x_y_enc, self.conf.enc_latent_dim, mu_prior, logvar_prior, stddev=self.conf.stddev)
-		else:
-			z, _, _ = PriorNet(x_s, hidden_units, self.conf.enc_latent_dim, stddev=1.0, prior_type=conf.prior_type)
-				
-		# thinking states
-		thinking_state = tf.concat([z, x_s], 1)
+				z, KLD, l2 = CreateVAE([enc_state, y_enc_state], self.conf.enc_latent_dim, mu_prior, logvar_prior)
 
 		# project z + x_thinking_state to decoder state
-		decision_layer = layers_core.Dense(mem_size, use_bias=True, name="decide", activation=tf.tanh)
-		decision_state = decision_layer(thinking_state) 
-
+		raw_dec_states = [z, enc_state]
 		# add BOW loss
-		num_hidden_units = int(math.sqrt(conf.output_vocab_size * int(decision_state.shape[1])))
-		bow_l1 = layers_core.Dense(num_hidden_units, use_bias=True, name="bow_hidden", activation=tf.tanh)
-		bow_l2 = layers_core.Dense(conf.output_vocab_size, use_bias=True, name="bow_out", activation=tf.tanh)
-		bow = bow_l2(bow_l1(decision_state)) 
+		#num_hidden_units = int(math.sqrt(conf.output_vocab_size * int(decision_state.shape[1])))
+		#bow_l1 = layers_core.Dense(num_hidden_units, use_bias=True, name="bow_hidden", activation=tf.tanh)
+		#bow_l2 = layers_core.Dense(conf.output_vocab_size, use_bias=True, name="bow_out", activation=None)
+		#bow = bow_l2(bow_l1(decision_state)) 
 
-		y_dec_inps = tf.slice(self.dec_inps, [0, 1], [-1, -1])
-		bow_y = tf.reduce_sum(tf.one_hot(y_dec_inps, on_value=1.0, off_value=0.0, axis=-1, depth=conf.output_vocab_size), axis=1)
-		batch_bow_losses = tf.reduce_sum(bow_y * (-1.0) * tf.nn.log_softmax(bow), axis=1)
+		#y_dec_inps = tf.slice(self.dec_inps, [0, 1], [-1, -1])
+		#bow_y = tf.reduce_sum(tf.one_hot(y_dec_inps, on_value=1.0, off_value=0.0, axis=-1, depth=conf.output_vocab_size), axis=1)
+		#batch_bow_losses = tf.reduce_sum(bow_y * (-1.0) * tf.nn.log_softmax(bow), axis=1)
 
 		max_mem_size = self.conf.input_max_len + self.conf.output_max_len + 2
-		cell = AttnCell(cell_model=conf.cell_model, num_units=mem_size, num_layers=conf.num_layers, attn_type=self.conf.attention,
-						memory=memory, mem_lens=memory_lens, max_mem_size=max_mem_size, addmem=self.conf.addmem,
-						keep_prob=1.0, dtype=tf.float32)
 
+		with tf.name_scope("ShapeToBeam") as scope: 
+			def _to_beam(t):
+				beam_t = tf.reshape(tf.tile(t, [1, self.beam_size]), [-1, int(t.get_shape()[1])])
+				return beam_t 
+			beam_raw_dec_states = tf.contrib.framework.nest.map_structure(_to_beam, raw_dec_states) 
+	
+			beam_memory = tf.reshape(tf.tile(self.enc_outs, [1, 1, self.beam_size]), [-1, conf.input_max_len, mem_size])
+			beam_memory_lens = tf.squeeze(tf.reshape(tf.tile(tf.expand_dims(self.enc_lens, 1), [1, self.beam_size]), [-1, 1]), 1)
+			
+		cell = AttnCell(cell_model=conf.cell_model, num_units=mem_size, num_layers=conf.num_layers,
+						attn_type=self.conf.attention, memory=beam_memory, mem_lens=beam_memory_lens,
+						max_mem_size=max_mem_size, addmem=self.conf.addmem, keep_prob=1.0,
+						dtype=tf.float32, name_scope="AttnCell")
 		# Fit decision states to shape of attention decoder cell states 
-		zero_attn_states = DecStateInit(decision_state, mem_size, cell, batch_size, self.beam_size)
+		zero_attn_states = DecStateInit(beam_raw_dec_states, cell, batch_size * self.beam_size)
 		
 		# Output projection
-		graphlg.info("Creating out_proj...") 
-		if conf.out_layer_size:
-			w = tf.get_variable("proj_w", [conf.out_layer_size, conf.output_vocab_size], dtype=dtype)
-		else:
-			w = tf.get_variable("proj_w", [mem_size, conf.output_vocab_size], dtype=dtype)
-		b = tf.get_variable("proj_b", [conf.output_vocab_size], dtype=dtype)
-		self.out_proj = (w, b)
-
+		with tf.variable_scope("OutProj"):
+			graphlg.info("Creating out_proj...") 
+			if conf.out_layer_size:
+				w = tf.get_variable("proj_w", [conf.out_layer_size, conf.output_vocab_size], dtype=dtype)
+			else:
+				w = tf.get_variable("proj_w", [mem_size, conf.output_vocab_size], dtype=dtype)
+			b = tf.get_variable("proj_b", [conf.output_vocab_size], dtype=dtype)
+			self.out_proj = (w, b)
+		
 		if not for_deploy: 
 			inputs = {}
 			dec_init_state = zero_attn_states
@@ -333,7 +335,7 @@ class CVAERNN(ModelCore):
 															   out_proj=self.out_proj)
 			output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
 			my_decoder = basic_decoder.BasicDecoder(cell=cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
-			cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, impute_finished=(self.conf.addmem==False),
+			cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, impute_finished=False,
 															maximum_iterations=conf.output_max_len + 1, scope=scope)
 			outputs = cell_outs.rnn_output
 
@@ -349,38 +351,36 @@ class CVAERNN(ModelCore):
 			#	self.mask = self.mask + tf.one_hot(indices=tf.ones([m], dtype=tf.int32) * i, on_value=100.0, depth=int(w.shape[1]))
 			#self.outputs = self.outputs - self.mask
 
-			self.outputs = tf.argmax(logits, axis=2)
-			self.outputs = tf.reshape(self.outputs, [-1, L])
-			self.outputs = self.out_table.lookup(tf.cast(self.outputs, tf.int64))
+			with tf.name_scope("DebugOutputs") as scope:
+				self.outputs = tf.argmax(logits, axis=2)
+				self.outputs = tf.reshape(self.outputs, [-1, L])
+				self.outputs = self.out_table.lookup(tf.cast(self.outputs, tf.int64))
 
 			# branch 2 for loss
-			tars = tf.slice(self.dec_inps, [0, 1], [-1, L])
-			wgts = tf.cumsum(tf.one_hot(self.dec_lens, L), axis=1, reverse=True)
+			with tf.name_scope("Loss") as scope:
+				tars = tf.slice(self.dec_inps, [0, 1], [-1, L])
+				wgts = tf.cumsum(tf.one_hot(self.dec_lens, L), axis=1, reverse=True)
 
-			#wgts = wgts * tf.expand_dims(self.down_wgts, 1)
-			self.loss = loss.sequence_loss(logits=logits, targets=tars, weights=wgts, average_across_timesteps=False, average_across_batch=False)
-			batch_wgt = tf.reduce_sum(self.down_wgts) + 1e-12 
-			bow_loss = tf.reduce_sum(batch_bow_losses * self.down_wgts) / batch_wgt
+				#wgts = wgts * tf.expand_dims(self.down_wgts, 1)
+				self.loss = loss.sequence_loss(logits=logits, targets=tars, weights=wgts, average_across_timesteps=False, average_across_batch=False)
+				batch_wgt = tf.reduce_sum(self.down_wgts) + 1e-12 
+				#bow_loss = tf.reduce_sum(batch_bow_losses * self.down_wgts) / batch_wgt
 
-			example_losses = tf.reduce_sum(self.loss, 1)
-			see_loss = tf.reduce_sum(example_losses / tf.cast(self.dec_lens, tf.float32) * self.down_wgts) / batch_wgt
-			KLD = tf.reduce_sum(KLD * self.down_wgts) / batch_wgt
+				example_losses = tf.reduce_sum(self.loss, 1)
+				see_loss = tf.reduce_sum(example_losses / tf.cast(self.dec_lens, tf.float32) * self.down_wgts) / batch_wgt
+				KLD = tf.reduce_sum(KLD * self.down_wgts) / batch_wgt
+				self.loss = tf.reduce_sum((example_losses + self.conf.kld_ratio * KLD) / tf.cast(self.dec_lens, tf.float32) * self.down_wgts) / batch_wgt
 
-			self.loss = tf.reduce_sum(example_losses * self.down_wgts) / batch_wgt
-			tf.summary.scalar("loss", see_loss)
-
-			if conf.kld_ratio:
-				self.loss += conf.kld_ratio * KLD
+			with tf.name_scope(self.model_kind):
+				tf.summary.scalar("loss", see_loss)
 				tf.summary.scalar("kld", KLD) 
-			if conf.bow_ratio:
-				self.loss += conf.bow_ratio * bow_loss 
-				tf.summary.scalar("bow", bow_loss)
+				#tf.summary.scalar("bow", bow_loss)
 
 			graph_nodes = {
 				"loss":self.loss,
 				"inputs":inputs,
 				"debug_outputs":self.outputs,
-				"outputs":None,
+				"outputs":{},
 				"visualize":None
 			}
 			return graph_nodes
@@ -477,10 +477,7 @@ class CVAERNN(ModelCore):
 				"loss":None,
 				"inputs":inputs,
 				"outputs":outputs,
-				"visualize":{
-					"thinking":thinking_state,
-					"decision":decision_state
-				}
+				"visualize":{}
 			}
 
 			return graph_nodes
@@ -512,12 +509,12 @@ class CVAERNN(ModelCore):
 		var_map = {}
 		for each in var_list:
 			name = each.name
-			name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
-			name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
-			name = re.sub("gates/bias", "gates/biases", name)
-			name = re.sub("candidate/bias", "candidate/biases", name)
-			name = re.sub("gates/kernel", "gates/weights", name)
-			name = re.sub("candidate/kernel", "candidate/weights", name)
+			#name = re.sub("lstm_cell/bias", "lstm_cell/biases", name)
+			#name = re.sub("lstm_cell/kernel", "lstm_cell/weights", name)
+			#name = re.sub("gates/bias", "gates/biases", name)
+			#name = re.sub("candidate/bias", "candidate/biases", name)
+			#name = re.sub("gates/kernel", "gates/weights", name)
+			#name = re.sub("candidate/kernel", "candidate/weights", name)
 			#name = re.sub("bias", "biases", name)
 			#name = re.sub("dense/weights", "dense/kernel", name)
 			#name = re.sub("dense/biases", "dense/bias", name)

@@ -18,11 +18,11 @@ from tensorflow.python.ops import variable_scope
 
 #from DynAttnTopicSeq2Seq import *
 from AttnSeq2Seq import *
-from VAERNN import * 
 from VAERNN2 import * 
-from VAERNN3 import * 
 from CVAERNN import *
 from AllAttn import *
+from AttnSeq2Seq import *
+from AttnS2SNewDecInit import *
 from KimCNN import *
 from RNNClassification import *
 
@@ -49,14 +49,14 @@ magic = {
 
         #"DynAttnTopicSeq2Seq": DynAttnTopicSeq2Seq,
         "AttnSeq2Seq": AttnSeq2Seq,
-        "VAERNN": VAERNN,
         "VAERNN2": VAERNN2,
-        "VAERNN3": VAERNN3,
         "CVAERNN": CVAERNN,
         "RNNClassification": RNNClassification,
         "Postprob": Postprob,
         "Tsinghua": Tsinghua,
         "AllAttn": AllAttn,
+		"AttnS2SNewDecInit":AttnS2SNewDecInit,
+        "AttnSeq2Seq": AttnSeq2Seq,
         "KimCNN":KimCNN
 }
 

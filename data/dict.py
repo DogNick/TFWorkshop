@@ -24,11 +24,13 @@ with codecs.open(filename) as f:
 
 out = sorted(vocab.items(), key=lambda x: x[1], reverse=True)
 with codecs.open(outname, "w") as f:
-    f.write("_PAD\n")
-    f.write("_GO\n")
-    f.write("_EOS\n")
-    f.write("_UNK\n")
-    for each in out:
-        f.write("%s\n" % each[0])
+	with codecs.open(outname + ".freq", "w") as f2:
+		f.write("_PAD\n")
+		f.write("_GO\n")
+		f.write("_EOS\n")
+		f.write("_UNK\n")
+		for each in out:
+			f.write("%s\n" % each[0])
+			f2.write("%s\t%d\n" % (each[0], each[1]))
 
 

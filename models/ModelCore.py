@@ -9,6 +9,7 @@ from util import *
 from config import confs
 
 from QueueReader import *
+import random
 import tensorflow as tf
 
 from tensorflow.python.ops import variable_scope

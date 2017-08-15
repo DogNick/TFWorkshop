@@ -59,6 +59,7 @@ tf.app.flags.DEFINE_string("service", None, "to export service")
 tf.app.flags.DEFINE_integer("schedule", None, "to export all models used in schedule")
 # for visualization
 tf.app.flags.DEFINE_string("visualize_file", None, "datafile to visualize")
+tf.app.flags.DEFINE_integer("max_line", -1, "datafile to visualize")
 
 
 FLAGS = tf.app.flags.FLAGS
@@ -71,7 +72,14 @@ def main(_):
 	if FLAGS.cmd == "visualize":
 		print "Reading data..."
 		with codecs.open(FLAGS.visualize_file) as f:
-			records = [re.split("\t", f.next().strip())[0] for i in range(1000)]
+			count = 0
+			records = []
+			for line in f:
+				count += 1
+				line = line.strip()
+				records.append(re.split("\t", line)[0])
+				if FLAGS.max_line > 0 and count >= FLAGS.max_line: 
+					break
 		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
 		model.visualize(FLAGS.train_root, sess, graph_nodes, records, FLAGS.use_seg)
 	# Export for deployment
@@ -95,7 +103,7 @@ def main(_):
 			model.conf.max_res_num = schedule[conf_name].get("max_res", conf.max_res_num)
 			model.conf.beam_splits = schedule[conf_name].get("beam_splits", conf.beam_splits)
 			model.conf.stddev = schedule[conf_name].get("stddev", conf.stddev)
-			model.conf.output_keep_prob = 1.0
+			model.conf.keep_prob = 1.0
 
 			sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
 			# do it
@@ -119,7 +127,7 @@ def main(_):
 			while not sess.should_stop():
 				# Data preproc 
 				start_time = time.time()
-				examples = model.fetch_data(use_random=False, begin=offset, size=model.conf.batch_size)
+				examples = model.fetch_data(use_random=True, begin=offset, size=model.conf.batch_size)
 				input_feed = model.preproc(examples, for_deploy=False, use_seg=False, default_wgt=1.5)
 				data_time += (time.time() - start_time) / FLAGS.steps_per_print
 				if iters % FLAGS.steps_per_print == 0:
