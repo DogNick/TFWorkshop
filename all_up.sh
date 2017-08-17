@@ -80,9 +80,9 @@
 #sleep 1.0
 #sh job.sh see vae2-addmem-weibo
 
-#sh job.sh create vae2-opensubtitle single 0 2
-#sleep 1.0
-#sh job.sh see vae2-opensubtitle
+sh job.sh create vae2-opensubtitle single 0 2
+sleep 1.0
+sh job.sh see vae2-opensubtitle
 
 #sh job.sh create news2s-opensubtitle_gt3 single 0 6 
 #sleep 1.0
@@ -92,10 +92,9 @@
 #sleep 1.0
 #sh job.sh see news2s-twitter
 
-sh job.sh create vae2-1024-attn-addmem single 0 0 
-sleep 1.0
-sh job.sh see vae2-1024-attn-addmem 
-
+#sh job.sh create vae2-1024-attn-addmem single 0 0 
+#sleep 1.0
+#sh job.sh see vae2-1024-attn-addmem 
 
 #sh job.sh create cvae-opensubtitle single 0 1 
 #sleep 1.0

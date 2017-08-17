@@ -157,12 +157,12 @@ class ModelCore(object):
 
 	@abc.abstractmethod
 	def print_after_proc(self, after_proc):
-		outs = after_proc["outputs"]
-		for i, each in enumerate(outs):
-			for j, s in enumerate(each):
-				out_str = " ".join(s)
-				#print out_str, outs[0]["probs"][i][j]
-				print out_str, after_proc["probs"][i][j] 
+		for i, each in enumerate(after_proc):
+			if isinstance(each, list):
+				for res in each:
+					print "[%d]" % i, res
+			else:				
+				print "[%d]" % i, each
 
 	def fetch_data(self, use_random=False, begin=0, size=128, dev=False, sess=None):
 		""" General Fetch data process
@@ -342,6 +342,7 @@ class ModelCore(object):
 			self.sess.run(self.learning_rate_decay_op)
 			self.latest_train_losses = []
 
+
 	def visualize(self, train_root, sess, graph_nodes, records=[], use_seg=False, ckpt_steps=None): 
 		if "visualize" not in graph_nodes:
 			print "visualize nodes not found"
@@ -445,7 +446,7 @@ class ModelCore(object):
 				feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True)
 				print "[feed_dict]", feed_dict
 				out_dict = sess.run(graph_nodes["outputs"], feed_dict) 
-				out = self.after_proc(out_dict) 
+				out = self.after_proc(out_dict)
 				self.print_after_proc(out)
 		elif variants == "score":
 			while True:
