@@ -87,7 +87,11 @@ class BeamDecoder(decoder.Decoder):
 
   @property
   def state_shape(self):
-	  return BeamState(beam_probs=tf.TensorShape([None]), beam_cell_states=self._cell.state_shape, beam_res_num=tf.TensorShape([None]))
+    if isinstance(self._cell, DynamicAttentionWrapper):
+      state_shape = self._cell.state_shape
+    else:
+      state_shape = nest.map_structure(lambda s: tf.TensorShape([None, s]), self._cell.state_size)
+    return BeamState(beam_probs=tf.TensorShape([None]), beam_cell_states=state_shape, beam_res_num=tf.TensorShape([None]))
 
   @property
   def output_shape(self):

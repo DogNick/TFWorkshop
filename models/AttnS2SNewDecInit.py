@@ -259,6 +259,7 @@ class AttnS2SNewDecInit(ModelCore):
 														end_token=EOS_ID, out_proj=(w, b))
 
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
+				dec_init_state = beam_decoder.BeamState(tf.zeros([batch_size * self.beam_size]), dec_init_state, tf.zeros([batch_size * self.beam_size], tf.int32))
 				my_decoder = beam_decoder.BeamDecoder(cell=cell, helper=hp_infer, out_proj=(w, b), initial_state=dec_init_state,
 														beam_splits=self.conf.beam_splits, max_res_num=self.conf.max_res_num, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len, impute_finished=True)
@@ -409,15 +410,10 @@ class AttnS2SNewDecInit(ModelCore):
 
 	def after_proc(self, out):
 		outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
-		outs = [(outputs[0][i], probs[0][i]) for i in range(len(outputs[0]))]			
+
+		outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]
+
 		#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
-		sorted_outs = sorted(outs, key=lambda x:x[1], reverse=True)
-
-		after_proc_out = {
-			"outs_probs": sorted_outs
-		}
+		sorted_outs = [sorted(outs[n], key=lambda x:x[1], reverse=True) for n in range(len(outs))]
+		after_proc_out = [[{"outputs":res[0], "probs":res[1]} for res in example] for example in sorted_outs]
 		return after_proc_out 
-
-	def print_after_proc(self, after_proc):
-		for each in after_proc["outs_probs"]:
-			print " ".join(each[0]),"\t",each[1] 

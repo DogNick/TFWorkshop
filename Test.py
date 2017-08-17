@@ -2,7 +2,7 @@
 import sys
 sys.path.insert(0, "models")
 sys.path.insert(0, "/search/odin/Nick/_python_build2")
-from models import create 
+from models import create, init_inference 
 from models import Nick_plan 
 import numpy as np
 import tensorflow as tf
@@ -13,6 +13,8 @@ import math
 from scipy import stats
 import re
 import os
+tf.app.flags.DEFINE_string("gpu", 0, "specify the gpu to use")
+FLAGS = tf.app.flags.FLAGS
 
 fh = log.StreamHandler()
 fh.setFormatter(log.Formatter('[%(asctime)s][%(name)s][%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S"))
@@ -33,11 +35,12 @@ def main():
 	name = "test/stc2.train.good.posts.selected"
 	name = "test/400query"
 	name = "final"
+	name = "data/opensubtitle_gt3/valid.data"
 	#name = "test/2k.post_comment"
 	#name = "test/stc2.train.post_comment"
 	#name = "test/all_post_uniq"
 	#name = "test/_UNK_query"
-	name = "test/real_gen_200"
+	#name = "test/real_gen_200"
 	#name = "test/english_query100.txt"
 	#name = "20170407_res_labeled_0"
 	#name = "20170407_res_labeled_1"
@@ -45,6 +48,9 @@ def main():
 
 	# get graph configuration
 	runtime_names = [
+		"news2s-opensubtitle_gt3",
+		"attns2s-opensubtitle_gt3",
+		"attns2s-twitter"
 		#"cvae2-merge-stc-weibo",
 		#"attn-s2s-merge-stc-weibo-downsample",
 		#"vae-merge-stc-weibo",
@@ -52,7 +58,6 @@ def main():
 		#"attn-bi-s2s-all-downsample-addmem",
 		#"attn-bi-s2s-all-downsample-addmem2",
 		#"attn-s2s-all-downsample-n-gram-addmem"
-		"allattn"
 		#"cvae-512-noprior-noattn",
 		#"cvae-1024-prior-attn",
 		#"cvae-1024-prior-attn-addmem",
@@ -80,7 +85,7 @@ def main():
 		for line in f:
 			line = line.strip()
 			orig_records.append(line)
-			line = re.sub(" +", "，", line)
+			#line = re.sub(" +", "，", line)
 			line = re.split("\t", line)[0]
 			records.append(line)
 
@@ -89,7 +94,7 @@ def main():
 	for model_name in runtime_names:
 		ckpt_dir = os.path.join(train_root, model_name) 
 		model = create(model_name, job_type="single", task_id=0)
-		sess, graph_nodes, global_steps = model.init_infer(gpu="1", runtime_root=train_root)
+		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=train_root, model_core=model, gpu=FLAGS.gpu)
 		runtimes[model_name] = (sess, graph_nodes, model)
 		tf.reset_default_graph()
 
@@ -128,10 +133,10 @@ def main():
 
 			# Nick's re-score and some interference
 			batch_res = [] 
-			print out_after_proc
-			for k in range(len(out_after_proc)):
+			for each in out_after_proc["outs_probs"]:
+				
 				#batch_res.append(Nick_plan.score_with_prob_attn(name, out[k], probs[k], attn[k], alpha=0.8, beta=0.2, average_across_len=True))
-				batch_res.append([(name, "".join(out_after_proc[k]), "None", 0, 0, 0, 0, 0, "None")]) 
+				batch_res.append([(name, "".join(each[0]), "None", 0, 0, 0, 0, 0, "None")]) 
 
 			batch_res_of_all_models.append(batch_res)
 
