@@ -582,6 +582,30 @@ confs["vae-1024-attn-addmem"].use_data_queue       = False
 confs["vae-1024-attn-addmem"].stddev               = 3.0 
 confs["vae-1024-attn-addmem"].addmem               = True 
 
+confs["vae2-1024-attn-addmem"] = copy.deepcopy(confs["vae"])
+confs["vae2-1024-attn-addmem"].model_kind           = "VAERNN2"
+confs["vae2-1024-attn-addmem"].input_vocab_size     = 40000
+confs["vae2-1024-attn-addmem"].output_vocab_size    = 40000
+confs["vae2-1024-attn-addmem"].lr_check_steps       = 150 
+confs["vae2-1024-attn-addmem"].lr_keep_steps        = 80000  
+confs["vae2-1024-attn-addmem"].learning_rate        = 0.0001
+confs["vae2-1024-attn-addmem"].learning_rate_decay_factor = 1.0 
+confs["vae2-1024-attn-addmem"].batch_size           = 64 
+confs["vae2-1024-attn-addmem"].cell_model           = "LSTMCell"
+confs["vae2-1024-attn-addmem"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-2-downsample/weibo.w2v.npy" 
+confs["vae2-1024-attn-addmem"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-all-clean"
+confs["vae2-1024-attn-addmem"].input_max_len        = 35 
+confs["vae2-1024-attn-addmem"].output_max_len       = 35 
+confs["vae2-1024-attn-addmem"].opt_name             = "Adam" 
+confs["vae2-1024-attn-addmem"].enc_latent_dim       = 1024 
+confs["vae2-1024-attn-addmem"].lam                  = 0.0 
+confs["vae2-1024-attn-addmem"].beam_splits          = [6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
+confs["vae2-1024-attn-addmem"].use_data_queue       = False
+confs["vae2-1024-attn-addmem"].stddev               = 1.0 
+#confs["vae2-1024-attn-addmem"].stddev               = 3.0 
+confs["vae2-1024-attn-addmem"].addmem               = True 
+
+
 confs["vae-bi-1024-attn-addmem-poem"] = copy.deepcopy(confs["vae"])
 confs["vae-bi-1024-attn-addmem-poem"].model_kind           = "VAERNN"
 confs["vae-bi-1024-attn-addmem-poem"].input_vocab_size     = 12000

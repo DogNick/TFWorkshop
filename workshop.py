@@ -118,6 +118,7 @@ def main(_):
 		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
 		model.test(sess, graph_nodes, use_seg=FLAGS.use_seg)
 	elif FLAGS.cmd == "train":
+		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 		if model.conf.cluster and FLAGS.job_type == "worker" or FLAGS.job_type == "single":
 			# Build graph, initialize graph and creat supervisor 
 			sess, graph_nodes = init_monitored_train(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
