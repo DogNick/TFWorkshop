@@ -58,7 +58,6 @@ magic = {
         "Tsinghua": Tsinghua,
         "AllAttn": AllAttn,
 		"AttnS2SNewDecInit":AttnS2SNewDecInit,
-        "AttnSeq2Seq": AttnSeq2Seq,
         "KimCNN":KimCNN
 }
 

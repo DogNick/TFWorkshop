@@ -33,22 +33,6 @@ DynamicAttentionWrapper = dynamic_attention_wrapper.DynamicAttentionWrapper
 DynamicAttentionWrapperState = dynamic_attention_wrapper.DynamicAttentionWrapperState 
 Bahdanau = dynamic_attention_wrapper.BahdanauAttention
 Luong = dynamic_attention_wrapper.LuongAttention
-def CreateMultiRNNCell(cell_name, num_units, num_layers=1, output_keep_prob=1.0, reuse=False, name_scope=None):
-	with tf.variable_scope(name_scope):
-		cells = []
-		for i in range(num_layers):
-			if cell_name == "GRUCell":
-				single_cell = GRUCell(num_units=num_units, reuse=reuse)
-			elif cell_name == "LSTMCell":
-				single_cell = LSTMCell(num_units=num_units, reuse=reuse)
-			else:
-				graphlg.info("Unknown Cell type !")
-				exit(0)
-			if output_keep_prob < 1.0:
-				single_cell = tf.contrib.rnn.DropoutWrapper(single_cell, output_keep_prob=output_keep_prob) 
-				graphlg.info("Layer %d, Dropout used: output_keep_prob %f" % (i, output_keep_prob))
-			cells.append(single_cell)
-	return MultiRNNCell(cells) 
 
 def PriorNet(states, hidden_units, enc_latent_dim, stddev=1.0, prior_type="mlp"):
 	all_states = []
@@ -75,91 +59,6 @@ def PriorNet(states, hidden_units, enc_latent_dim, stddev=1.0, prior_type="mlp")
 		mu_prior = tf.zeros_like(epsilon)
 		logvar_prior = 2 * tf.log(stddev) * tf.ones_like(epsilon)
 	return z, mu_prior, logvar_prior 
-
-def CreateVAE(states, enc_latent_dim, mu_prior=None, logvar_prior=None, reuse=False, dtype=tf.float32, name_scope=None):
-	with tf.name_scope(name_scope) as scope:
-		graphlg.info("Creating latent z for encoder states") 
-		all_states = []
-		for each in states:
-			all_states.extend(list(each))
-		h_state = tf.concat(all_states, 1, name="concat_states")
-		epsilon = tf.random_normal([tf.shape(h_state)[0], enc_latent_dim])
-		with tf.name_scope("EncToLatent"):
-			W_enc_hidden_mu = tf.Variable(tf.random_normal([int(h_state.get_shape()[1]), enc_latent_dim]),name="w_enc_hidden_mu")
-			b_enc_hidden_mu = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_mu") 
-			W_enc_hidden_logvar = tf.Variable(tf.random_normal([int(h_state.get_shape()[1]), enc_latent_dim]), name="w_enc_hidden_logvar")
-			b_enc_hidden_logvar = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_logvar") 
-			# Should there be any non-linearty?
-			# A normal sampler
-			mu_enc = tf.tanh(tf.matmul(h_state, W_enc_hidden_mu) + b_enc_hidden_mu)
-			logvar_enc = tf.matmul(h_state, W_enc_hidden_logvar) + b_enc_hidden_logvar
-			z = mu_enc + tf.exp(0.5 * logvar_enc) * epsilon
-
-		if mu_prior == None:
-			mu_prior = tf.zeros_like(epsilon)
-		if logvar_prior == None:
-			logvar_prior = tf.zeros_like(epsilon)
-
-		# Should this z be concatenated by original state ?
-		with tf.name_scope("KLD"):
-			KLD = -0.5 * tf.reduce_sum(1 + logvar_enc - logvar_prior - (tf.pow(mu_enc - mu_prior, 2) + tf.exp(logvar_enc))/tf.exp(logvar_prior), axis = 1)
-	return z, KLD, None 
-
-def DynRNN(cell_model, num_units, num_layers, emb_inps, enc_lens, keep_prob=1.0, bidi=False, name_scope="encoder", dtype=tf.float32):
-	with tf.name_scope(name_scope) as scope:
-		if bidi:
-			cell_fw = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell_fw")
-			cell_bw = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell_bw")
-			enc_outs, enc_states = bidirectional_dynamic_rnn(cell_fw=cell_fw, cell_bw=cell_bw,
-															inputs=emb_inps,
-															sequence_length=enc_lens,
-															dtype=dtype,
-															parallel_iterations=16,
-															scope=name_scope)
-			fw_s, bw_s = enc_states 
-			enc_states = []
-			for f, b in zip(fw_s, bw_s):
-				if isinstance(f, LSTMStateTuple):
-					enc_states.append(LSTMStateTuple(tf.concat([f.c, b.c], axis=1), tf.concat([f.h, b.h], axis=1)))
-				else:
-					enc_states.append(tf.concat([f, b], 1))
-
-			enc_outs = tf.concat([enc_outs[0], enc_outs[1]], axis=2)
-			mem_size = 2 * num_units
-			enc_state_size = 2 * num_units 
-		else:
-			cell = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell")
-			enc_outs, enc_states = dynamic_rnn(cell=cell,
-											   inputs=emb_inps,
-											   sequence_length=enc_lens,
-											   parallel_iterations=1,
-											   dtype=dtype,
-											   scope=name_scope)
-			mem_size = num_units
-			enc_state_size = num_units
-	return enc_outs, enc_states, mem_size, enc_state_size
-
-def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max_mem_size, keep_prob=1.0, addmem=False, dtype=tf.float32, name_scope="attn_cell"):
-	# Attention  
-	with tf.name_scope(name_scope):
-		decoder_cell = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, False, name_scope)
-		if attn_type == "Luo":
-			mechanism = dynamic_attention_wrapper.LuongAttention(num_units=num_units, memory=memory,
-																	max_mem_size=max_mem_size,
-																	memory_sequence_length=mem_lens)
-		elif attn_type == "Bah":
-			mechanism = dynamic_attention_wrapper.BahdanauAttention(num_units=num_units, memory=memory, 
-																	max_mem_size=max_mem_size,
-																	memory_sequence_length=mem_lens)
-		elif attn_type == None:
-			return decoder_cell
-		else:
-			print "Unknown attention stype, must be Luo or Bah" 
-			exit(0)
-		attn_cell = DynamicAttentionWrapper(cell=decoder_cell, attention_mechanism=mechanism,
-												attention_size=num_units, addmem=addmem)
-		return attn_cell
-
 
 def DecStateInit(raw_states, decoder_cell, batch_size):
 	# Encoder states for initial state, with vae 
@@ -198,7 +97,6 @@ def DecStateInit(raw_states, decoder_cell, batch_size):
 			zero_states = tuple(init_states)
 		
 		return zero_states
-
 
 class CVAERNN(ModelCore):
 	def __init__(self, name, job_type="single", task_id=0, dtype=tf.float32):

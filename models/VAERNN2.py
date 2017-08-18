@@ -14,94 +14,10 @@ from tensorflow.contrib.seq2seq.python.ops import loss
 from tensorflow.python.layers import core as layers_core
 
 import Nick_plan
+from components import DecStateInit, AttnCell, DynRNN, CreateMultiRNNCell, CreateVAE 
 import logging as log
 
 graphlg = log.getLogger("graph")
-
-DynamicAttentionWrapper = dynamic_attention_wrapper.DynamicAttentionWrapper
-DynamicAttentionWrapperState = dynamic_attention_wrapper.DynamicAttentionWrapperState 
-Bahdanau = dynamic_attention_wrapper.BahdanauAttention
-Luong = dynamic_attention_wrapper.LuongAttention
-
-def DynRNN(cell_model, num_units, num_layers, emb_inps, enc_lens, keep_prob=1.0, bidi=False, name_scope="encoder", dtype=tf.float32):
-	with tf.name_scope(name_scope) as scope:
-		if bidi:
-			cell_fw = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell_fw")
-			cell_bw = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell_bw")
-			enc_outs, enc_states = bidirectional_dynamic_rnn(cell_fw=cell_fw, cell_bw=cell_bw,
-															inputs=emb_inps,
-															sequence_length=enc_lens,
-															dtype=dtype,
-															parallel_iterations=16,
-															scope=name_scope)
-			fw_s, bw_s = enc_states 
-			enc_states = []
-			for f, b in zip(fw_s, bw_s):
-				if isinstance(f, LSTMStateTuple):
-					enc_states.append(LSTMStateTuple(tf.concat([f.c, b.c], axis=1), tf.concat([f.h, b.h], axis=1)))
-				else:
-					enc_states.append(tf.concat([f, b], 1))
-
-			enc_outs = tf.concat([enc_outs[0], enc_outs[1]], axis=2)
-			mem_size = 2 * num_units
-			enc_state_size = 2 * num_units 
-		else:
-			cell = CreateMultiRNNCell(cell_model, num_units, num_layers, keep_prob, name_scope="cell")
-			enc_outs, enc_states = dynamic_rnn(cell=cell,
-											   inputs=emb_inps,
-											   sequence_length=enc_lens,
-											   parallel_iterations=16,
-											   dtype=dtype,
-											   scope=name_scope)
-			mem_size = num_units
-			enc_state_size = num_units
-	return enc_outs, enc_states, mem_size, enc_state_size
-
-def CreateMultiRNNCell(cell_name, num_units, num_layers=1, output_keep_prob=1.0, reuse=False, name_scope=None):
-	with tf.variable_scope(name_scope):
-		cells = []
-		for i in range(num_layers):
-			if cell_name == "GRUCell":
-				single_cell = GRUCell(num_units=num_units, reuse=reuse)
-			elif cell_name == "LSTMCell":
-				single_cell = LSTMCell(num_units=num_units, reuse=reuse)
-			else:
-				graphlg.info("Unknown Cell type !")
-				exit(0)
-			if output_keep_prob < 1.0:
-				single_cell = tf.contrib.rnn.DropoutWrapper(single_cell, output_keep_prob=output_keep_prob) 
-				graphlg.info("Layer %d, Dropout used: output_keep_prob %f" % (i, output_keep_prob))
-			cells.append(single_cell)
-	return MultiRNNCell(cells) 
-
-def CreateVAE(states, enc_latent_dim, mu_prior=None, logvar_prior=None, reuse=False, dtype=tf.float32, name_scope=None):
-	with tf.name_scope(name_scope) as scope:
-		graphlg.info("Creating latent z for encoder states") 
-		all_states = []
-		for each in states:
-			all_states.extend(list(each))
-		h_state = tf.concat(all_states, 1, name="concat_states")
-		epsilon = tf.random_normal([tf.shape(h_state)[0], enc_latent_dim])
-		with tf.name_scope("EncToLatent"):
-			W_enc_hidden_mu = tf.Variable(tf.random_normal([int(h_state.get_shape()[1]), enc_latent_dim]),name="w_enc_hidden_mu")
-			b_enc_hidden_mu = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_mu") 
-			W_enc_hidden_logvar = tf.Variable(tf.random_normal([int(h_state.get_shape()[1]), enc_latent_dim]), name="w_enc_hidden_logvar")
-			b_enc_hidden_logvar = tf.Variable(tf.random_normal([enc_latent_dim]), name="b_enc_hidden_logvar") 
-			# Should there be any non-linearty?
-			# A normal sampler
-			mu_enc = tf.tanh(tf.matmul(h_state, W_enc_hidden_mu) + b_enc_hidden_mu)
-			logvar_enc = tf.matmul(h_state, W_enc_hidden_logvar) + b_enc_hidden_logvar
-			z = mu_enc + tf.exp(0.5 * logvar_enc) * epsilon
-
-		if mu_prior == None:
-			mu_prior = tf.zeros_like(epsilon)
-		if logvar_prior == None:
-			logvar_prior = tf.zeros_like(epsilon)
-
-		# Should this z be concatenated by original state ?
-		with tf.name_scope("KLD"):
-			KLD = -0.5 * tf.reduce_sum(1 + logvar_enc - logvar_prior - (tf.pow(mu_enc - mu_prior, 2) + tf.exp(logvar_enc))/tf.exp(logvar_prior), axis = 1)
-	return z, KLD, None 
 
 class VAERNN2(ModelCore):
 	"""This is a modified vae
@@ -157,40 +73,6 @@ class VAERNN2(ModelCore):
 			with ops.device("/cpu:0"):
 				self.emb_inps = embedding_lookup_unique(self.embedding, self.enc_inps)
 				emb_dec_inps = embedding_lookup_unique(self.embedding, dec_inps)
-
-		graphlg.info("Creating dynamic rnn...")
-		self.enc_outs, self.enc_states, mem_size, enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
-																			  self.emb_inps, self.enc_lens, keep_prob=1.0,
-																			  bidi=conf.bidirectional, name_scope="DynRNNEncoder")
-		# Do vae on the state of the last layer of the encoder 
-		enc_state = self.enc_states[-1]
-		z, KLD, l2 = CreateVAE([enc_state], self.conf.enc_latent_dim, name_scope="VAE")
-		with tf.name_scope("ShapeToDecInit"):
-			if isinstance(enc_state, LSTMStateTuple):
-				layer = layers_core.Dense(enc_state.c.shape[1], use_bias=False)
-				new_c = layer(tf.concat([z, enc_state.c], 1))
-				vae_states = [LSTMStateTuple(new_c, enc_state.h)]
-			else:
-				new_state_layer = layers_core.Dense(enc_state.shape[1], use_bias=False)
-				new_state = layer(tf.concat([z, enc_state], 1))
-				vae_states = [new_state]
-
-			with tf.name_scope("ShapeToBeam") as scope: 
-				memory = tf.reshape(tf.tile(self.enc_outs, [1, 1, self.beam_size]), [-1, conf.input_max_len, mem_size])
-				memory_lens = tf.squeeze(tf.reshape(tf.tile(tf.expand_dims(self.enc_lens, 1), [1, self.beam_size]), [-1, 1]), 1)
-				def _to_beam(t):
-					return tf.reshape(tf.tile(t, [1, self.beam_size]), [-1, mem_size])	
-				beam_vae_states = tf.contrib.framework.nest.map_structure(_to_beam, vae_states)
-				beam_zero_states = tf.contrib.framework.nest.map_structure(tf.zeros_like, beam_vae_states) 
-
-			# Construct init states for decoder
-			init_states = []
-			for i, each in enumerate(self.enc_states):
-				if i == 0:
-					init_states.extend(beam_vae_states)
-				else:
-					init_states.extend(beam_zero_states)
-
 		# output projector (w, b)
 		with tf.variable_scope("OutProj"):
 			if conf.out_layer_size:
@@ -201,45 +83,50 @@ class VAERNN2(ModelCore):
 				w = tf.get_variable("proj_w", [conf.num_units, conf.output_vocab_size], dtype=dtype)
 			b = tf.get_variable("proj_b", [conf.output_vocab_size], dtype=dtype)
 
-		with tf.name_scope("DynRNNDecode") as scope:
-			decoder_cell = CreateMultiRNNCell(conf.cell_model, mem_size, conf.num_layers, conf.output_keep_prob, name_scope=scope)
-			max_mem_size = self.conf.input_max_len + self.conf.output_max_len + 2
-			if conf.attention == "Luo":
-				mechanism = dynamic_attention_wrapper.LuongAttention(num_units=mem_size, memory=memory, max_mem_size=max_mem_size,
-																		memory_sequence_length=memory_lens)
-			elif conf.attention == "Bah":
-				mechanism = dynamic_attention_wrapper.BahdanauAttention(num_units=mem_size, memory=memory, max_mem_size=max_mem_size,
-																		memory_sequence_length=memory_lens)
+		graphlg.info("Creating dynamic rnn...")
+		self.enc_outs, self.enc_states, mem_size, enc_state_size = DynRNN(conf.cell_model, conf.num_units, conf.num_layers,
+																			  self.emb_inps, self.enc_lens, keep_prob=1.0,
+																			  bidi=conf.bidirectional, name_scope="DynRNNEncoder")
+		batch_size = tf.shape(self.enc_outs)[0]
+		# Do vae on the state of the last layer of the encoder 
+		final_enc_states = []
+		KLDs = 0.0
+		for each in self.enc_states:
+			z, KLD, l2 = CreateVAE([each], self.conf.enc_latent_dim, name_scope="VAE")
+			if isinstance(each, LSTMStateTuple):
+				final_enc_states.append(LSTMStateTuple(each.c, tf.concat([each.h, z], 1)))
 			else:
-				print "Unknown attention stype, must be Luo or Bah" 
-				exit(0)
-			attn_cell = DynamicAttentionWrapper(cell=decoder_cell, attention_mechanism=mechanism,
-											attention_size=mem_size, addmem=self.conf.addmem)
-			
-			with tf.name_scope("InitStates") as init_state_scope:
-				batch_size = tf.shape(self.enc_outs)[0]
-				zero_attn_states = attn_cell.zero_state(dtype=tf.float32, batch_size=batch_size * self.beam_size)
-				zero_attn_states = DynamicAttentionWrapperState(tuple(init_states), zero_attn_states.attention, zero_attn_states.newmem, zero_attn_states.alignments)
-				if not for_deploy:
-					dec_init_state = zero_attn_states
-				else:
-					dec_init_state = beam_decoder.BeamState(tf.zeros([batch_size * self.beam_size]), zero_attn_states, tf.zeros([batch_size * self.beam_size], tf.int32))
-				graphlg.info("Creating out_proj...") 
+				final_enc_state.append(tf.concat([z, each], 1))
+			KLDs += KLD / self.conf.num_layers
+		
+		with tf.name_scope("DynRNNDecode") as scope:
+			with tf.name_scope("ShapeToBeam") as scope: 
+				beam_memory = tf.reshape(tf.tile(self.enc_outs, [1, 1, self.beam_size]), [-1, conf.input_max_len, mem_size])
+				beam_memory_lens = tf.squeeze(tf.reshape(tf.tile(tf.expand_dims(self.enc_lens, 1), [1, self.beam_size]), [-1, 1]), 1)
+				def _to_beam(t):
+					return tf.reshape(tf.tile(t, [1, self.beam_size]), [-1, int(t.get_shape()[1])])	
+				beam_init_states = tf.contrib.framework.nest.map_structure(_to_beam, final_enc_states)
+			max_mem_size = self.conf.input_max_len + self.conf.output_max_len + 2
+			cell = AttnCell(cell_model=conf.cell_model, num_units=mem_size, num_layers=conf.num_layers,
+							attn_type=self.conf.attention, memory=beam_memory, mem_lens=beam_memory_lens,
+							max_mem_size=max_mem_size, addmem=self.conf.addmem, keep_prob=conf.keep_prob,
+							dtype=tf.float32, name_scope="AttnCell")
 
+			dec_init_state = DecStateInit(all_enc_states=beam_init_states, decoder_cell=cell, batch_size=batch_size * self.beam_size, init_type="each2each")
 
 			if not for_deploy: 
 				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, 
 																   embedding=self.embedding, sampling_probability=self.conf.sample_prob,
 																   out_proj=(w, b))
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
-				my_decoder = basic_decoder.BasicDecoder(cell=attn_cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
+				my_decoder = basic_decoder.BasicDecoder(cell=cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, impute_finished=False, maximum_iterations=conf.output_max_len + 1, scope=scope)
 			elif variants == "score":
 				dec_init_state = zero_attn_states
 				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, embedding=self.embedding, sampling_probability=0.0,
 																   out_proj=(w, b))
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
-				my_decoder = score_decoder.ScoreDecoder(cell=attn_cell, helper=hp_train, out_proj=(w, b), initial_state=dec_init_state, output_layer=output_layer)
+				my_decoder = score_decoder.ScoreDecoder(cell=cell, helper=hp_train, out_proj=(w, b), initial_state=dec_init_state, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len, impute_finished=False)
 			else:
 				hp_infer = helper.GreedyEmbeddingHelper(embedding=self.embedding,
@@ -247,7 +134,7 @@ class VAERNN2(ModelCore):
 														end_token=EOS_ID, out_proj=(w, b))
 
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
-				my_decoder = beam_decoder.BeamDecoder(cell=attn_cell, helper=hp_infer, out_proj=(w, b), initial_state=dec_init_state,
+				my_decoder = beam_decoder.BeamDecoder(cell=cell, helper=hp_infer, out_proj=(w, b), initial_state=dec_init_state,
 														beam_splits=self.conf.beam_splits, max_res_num=self.conf.max_res_num, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len, impute_finished=True)
 
@@ -268,15 +155,16 @@ class VAERNN2(ModelCore):
 			with tf.name_scope("Loss") as scope:
 				tars = tf.slice(self.dec_inps, [0, 1], [-1, L])
 				wgts = tf.cumsum(tf.one_hot(self.dec_lens, L), axis=1, reverse=True)
-
 				#wgts = wgts * tf.expand_dims(self.down_wgts, 1)
 				self.loss = loss.sequence_loss(logits=logits, targets=tars, weights=wgts, average_across_timesteps=False, average_across_batch=False)
 				example_losses = tf.reduce_sum(self.loss, 1)
 
 				batch_wgt = tf.reduce_sum(self.down_wgts)
-				see_KLD = tf.reduce_sum(KLD * self.down_wgts) / batch_wgt
+				see_KLD = tf.reduce_sum(KLDs * self.down_wgts) / batch_wgt
 				see_loss = tf.reduce_sum(example_losses / tf.cast(self.dec_lens, tf.float32) * self.down_wgts) / batch_wgt
-				self.loss = tf.reduce_sum((example_losses + self.conf.kld_ratio * KLD) / tf.cast(self.dec_lens, tf.float32) * self.down_wgts) / batch_wgt
+
+				# not average over length
+				self.loss = tf.reduce_sum((example_losses + self.conf.kld_ratio * KLDs) * self.down_wgts) / batch_wgt
 
 			with tf.name_scope(self.model_kind):
 				tf.summary.scalar("loss", see_loss)

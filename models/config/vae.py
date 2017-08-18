@@ -388,7 +388,8 @@ confs["vae2-1024-attn-addmem"].lam                  = 0.0
 confs["vae2-1024-attn-addmem"].beam_splits          = [6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
 confs["vae2-1024-attn-addmem"].use_data_queue       = False
 confs["vae2-1024-attn-addmem"].stddev               = 1.0 
-#confs["vae2-1024-attn-addmem"].stddev               = 3.0 
+confs["vae2-1024-attn-addmem"].kld_ratio            = 1.0 
+#confs["vae2-1024-attn-addmem"].stddev              = 3.0 
 confs["vae2-1024-attn-addmem"].addmem               = True 
 
 
