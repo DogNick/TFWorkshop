@@ -24,6 +24,7 @@ from tensorflow.contrib.seq2seq.python.ops import loss
 
 from tensorflow.python.layers import core as layers_core
 from tensorflow.contrib.session_bundle import exporter
+from components import DecStateInit, AttnCell, DynRNN, CreateMultiRNNCell, CreateVAE 
 
 import Nick_plan
 import logging as log

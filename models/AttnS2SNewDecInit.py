@@ -147,14 +147,15 @@ class AttnS2SNewDecInit(ModelCore):
 
 			with tf.name_scope("Loss") as scope:
 				tars = tf.slice(self.dec_inps, [0, 1], [-1, L])
+
+				# wgts may be a more complicated form, for example a partial down-weighting of a sequence
+				# but here i just use  1.0 weights for all no-padding label
 				wgts = tf.cumsum(tf.one_hot(self.dec_lens, L), axis=1, reverse=True)
-
 				#wgts = wgts * tf.expand_dims(self.down_wgts, 1)
-				self.loss = loss.sequence_loss(logits=logits, targets=tars, weights=wgts, average_across_timesteps=False, average_across_batch=False)
-				example_losses = tf.reduce_sum(self.loss, 1)
 
-				batch_wgt = tf.reduce_sum(self.down_wgts)
-				see_loss = self.loss = tf.reduce_sum(example_losses / tf.cast(self.dec_lens, tf.float32) * self.down_wgts) / batch_wgt
+				loss_matrix = loss.sequence_loss(logits=logits, targets=tars, weights=wgts, average_across_timesteps=False, average_across_batch=False)
+
+				self.loss = see_loss = tf.reduce_sum(loss_matrix) / tf.reduce_sum(wgts)
 
 			with tf.name_scope(self.model_kind):
 				tf.summary.scalar("loss", see_loss)

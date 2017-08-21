@@ -244,8 +244,9 @@ then
     RUNTIME_NAME=$2
     GPU=$3
 	USE_SEG=$4
+	CKPT=$5
     echo "Test for $RUNTIME_NAME on $GPU ..."
-    python workshop.py --cmd=test --conf_name=$RUNTIME_NAME --gpu=$GPU --use_seg=$USE_SEG --train_root=$TRAIN_ROOT
+    python workshop.py --cmd=test --conf_name=$RUNTIME_NAME --gpu=$GPU --use_seg=$USE_SEG --train_root=$TRAIN_ROOT --ckpt_steps=$CKPT
 elif [ "$1"x = "visualize"x ]
 then
     RUNTIME_NAME=$2

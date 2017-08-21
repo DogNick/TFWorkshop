@@ -63,9 +63,16 @@
 #sleep 1.0
 #sh job.sh see news2s-twitter
 
-sh job.sh create vae2-1024-attn-addmem single 0 0 
+#sh job.sh create vae2-1024-attn-addmem single 0 0 
+#sleep 1.0
+#sh job.sh see vae2-1024-attn-addmem 
+
+#sh job.sh create news2s-noinit-opensubtitle_gt3 single 0 2
+#sleep 1.0
+#sh job.sh see news2s-noinit-opensubtitle_gt3
+sh job.sh create news2s-twitter-clean single 0 5
 sleep 1.0
-sh job.sh see vae2-1024-attn-addmem 
+sh job.sh see news2s-twitter-clean
 
 #sh job.sh create cvae-opensubtitle single 0 1 
 #sleep 1.0

@@ -14,6 +14,9 @@ from scipy import stats
 import re
 import os
 tf.app.flags.DEFINE_string("gpu", 0, "specify the gpu to use")
+tf.app.flags.DEFINE_string("command", "see", "use different test behaviors")
+tf.app.flags.DEFINE_string("lan", "ch", "to specify language")
+tf.app.flags.DEFINE_integer("batch_size", 100, "to specify language")
 FLAGS = tf.app.flags.FLAGS
 
 fh = log.StreamHandler()
@@ -29,52 +32,18 @@ graphlg = log.getLogger("graph")
 trainlg = log.getLogger("train")
 train_root = "/search/odin/Nick/GenerateWorkshop/runtime"
 def main():
-	name = "test/baseline"
-	name = "test/p-r_rec-87.labeled"
-	name = "test/p-100.test"
-	name = "test/stc2.train.good.posts.selected"
-	name = "test/400query"
-	name = "final"
-	name = "data/opensubtitle_gt3/valid.data"
-	#name = "test/2k.post_comment"
-	#name = "test/stc2.train.post_comment"
-	#name = "test/all_post_uniq"
-	#name = "test/_UNK_query"
-	#name = "test/real_gen_200"
-	#name = "test/english_query100.txt"
-	#name = "20170407_res_labeled_0"
-	#name = "20170407_res_labeled_1"
-	#name = "20170407_res_labeled_2"
+	name = "data/twitter_25w_filter_len_unk/test"
+	#name = "data/opensubtitle_gt3/test"
 
 	# get graph configuration
 	runtime_names = [
 		"news2s-opensubtitle_gt3",
-		"attns2s-opensubtitle_gt3",
-		"attns2s-twitter"
-		#"cvae2-merge-stc-weibo",
-		#"attn-s2s-merge-stc-weibo-downsample",
-		#"vae-merge-stc-weibo",
-		#"attn-s2s-all-downsample-addmem",
-		#"attn-bi-s2s-all-downsample-addmem",
-		#"attn-bi-s2s-all-downsample-addmem2",
-		#"attn-s2s-all-downsample-n-gram-addmem"
-		#"cvae-512-noprior-noattn",
-		#"cvae-1024-prior-attn",
-		#"cvae-1024-prior-attn-addmem",
-		#"cvae-512-noprior-attn",
-		#"vae-1024-attn-addmem"
-		#"cvae-512-prior-attn",
-		#"cvae-512-prior-noattn",
-		#"cvae-128-prior-attn"
+		#"news2s-noinit-opensubtitle_gt3",
+		#"news2s-twitter",
+		#"news2s-twitter-clean"
+		#"cvae-noattn-opensubtitle_gt3"
 	]
 	scorer_names = [ 
-		#"stc-2-interact-qpr-negpr"
-		#"stc-2-interact-qppr"
-		#"stc-2-interact-qppr-2"
-		#"stc-2-interact-qpr-negpr-shuf"
-		#"stc-2-interact-qpr-negpr-obj0"
-		#"attn-s2s-merge-stc-weibo-downsample",
-		#"attn-s2s-all-downsample-addmem",
 		#"attn-bi-s2s-all-downsample-addmem2",
 		#"attn-s2s-all-downsample-n-gram-addmem"
 	]
@@ -107,17 +76,13 @@ def main():
 		scorer[model_name] = (sess, graph_nodes, model)
 		tf.reset_default_graph()
 
-	command = sys.argv[1]
-	batch_size = int(sys.argv[2])
-	is_ch = True 
-	for i in range(0, len(records), batch_size):
+	for i in range(0, len(records), FLAGS.batch_size):
 		batch_res_of_all_models = []
-		batch = records[i:i+batch_size]
+		batch = records[i:i+FLAGS.batch_size]
 		for name in runtime_names:
 			sess, graph_nodes, model = runtimes[name]
-			input_feed = model.preproc(batch, use_seg=is_ch, for_deploy=True) 
+			input_feed = model.preproc(batch, use_seg=(FLAGS.lan=="ch"), for_deploy=True) 
 			step_out = sess.run(graph_nodes["outputs"], input_feed)
-			#out, probs, attn = model.after_proc(step_out) 
 			out_after_proc = model.after_proc(step_out)
 
 			# Model scoring
@@ -133,16 +98,19 @@ def main():
 
 			# Nick's re-score and some interference
 			batch_res = [] 
-			for each in out_after_proc["outs_probs"]:
-				
-				#batch_res.append(Nick_plan.score_with_prob_attn(name, out[k], probs[k], attn[k], alpha=0.8, beta=0.2, average_across_len=True))
-				batch_res.append([(name, "".join(each[0]), "None", 0, 0, 0, 0, 0, "None")]) 
+			for example_res in out_after_proc:
+				outputs = [each["outputs"] for each in example_res]
+				probs = [each["probs"] for each in example_res]
+				scored_res = Nick_plan.score_with_prob_attn(name, outputs, probs, None, alpha=0.8, beta=0.2, is_ch=(FLAGS.lan=="ch"), average_across_len=True)
+				batch_res.append(scored_res)
+				#batch_res.append([(name, "".join(each[0]), "None", 0, 0, 0, 0, 0, "None")]) 
 
-			batch_res_of_all_models.append(batch_res)
+		batch_res_of_all_models.append(batch_res)
 
+		# Handle each batch of all model res, may merge their results of one example
 		for n in range(len(batch_res_of_all_models[0])):
 			one_res_of_all_model = []
-			for m in range(len(batch_res_of_all_models)):
+			for m in range(len(runtime_names)):
 				#sorted_res = Nick_plan.rank(batch_res_of_all_models[m][n])
 				sorted_res = batch_res_of_all_models[m][n]
 				#print sorted_res[0][3].keys()
@@ -151,10 +119,9 @@ def main():
 				#	#print each[0], each[1], each[2], each[3].values()
 				one_res_of_all_model.extend(sorted_res)
 				#raw_input()
-
 			final_res = sorted(one_res_of_all_model, key=lambda x:x[3], reverse=True)
 			#final_res = sorted(one_res_of_all_model, key=lambda x:sum(x[3].values()) /float(len(x[1].decode("utf-8"))), reverse=True)
-			if command == "see":
+			if FLAGS.command == "see":
 				print "==================================="
 				print records[n + i]
 				print "==================================="
@@ -162,9 +129,12 @@ def main():
 					#print each[0], each[-1], each[2], "[All:%.5f]" % each[3], "[Org:%.5f]" % each[4], "[LenRatio:%.5f]" % each[5], "[AttnEnt:%.5f]" % each[6]
 					print each[0], each[1], each[2], each[3]
 				raw_input()
-			elif command == "dump":
-				print "%s\t%s\t%s" % (records[n + i], final_res[0][1], final_res[0][0])
-			elif command == "dumpall":
+			elif FLAGS.command == "dump":
+				if len(final_res) == 0:
+					print "[NO results] %s" % records[n + i] 
+				else:
+					print "%s\t%s\t%s" % (records[n + i], final_res[0][1], final_res[0][0])
+			elif FLAGS.command == "dumpall":
 				for w in range(len(final_res)):
 					print "%s\t%s\t%s" % (orig_records[n + i], final_res[w][1], final_res[w][0])
 				#raw_input()

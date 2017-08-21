@@ -164,7 +164,7 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 				"Global step should be created to use CheckpointSaverHook.")
 		for l in self._listeners:
 			l.begin()
-		self._prev_max_dev_loss = 10000
+		self._prev_min_dev_loss = 10000
 
 
 	def before_run(self, run_context):	
@@ -217,10 +217,12 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 				summary.value.add(tag="%s/%s" % (self._summary_tag_scope, key), simple_value=v)
 			self._summary_writer.add_summary(summary, global_steps)
 
+			# summarize for output text 
+
 			dev_ppx = math.exp(dev_statistics["dev_loss"]) if dev_statistics["dev_loss"] < 300 else float('inf')
 			trainlg.info("[Dev]Step-time %.2f, DEV_PPX %.2f" % (dev_time, dev_ppx))
-			if global_steps > self._firein_steps and dev_statistics["dev_loss"] < self._prev_max_dev_loss:
+			if global_steps > self._firein_steps and dev_statistics["dev_loss"] < self._prev_min_dev_loss:
 				trainlg.info("Need Saving....")
-				self._prev_max_dev_loss = round(dev_statistics["dev_loss"], 4)
+				self._prev_min_dev_loss = round(dev_statistics["dev_loss"], 4)
 				self._saver.save(sess, self._save_path, global_step=global_steps)
 			self._timer.update_last_triggered_step(global_steps)

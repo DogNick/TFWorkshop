@@ -32,10 +32,6 @@ def handle_beam_out(out, beam_splits):
     outputs = []
     probs = []
     attns = []
-    #print out["beam_symbols"][0]
-    #print out["beam_parents"][0]
-    #print out["beam_ends"][0]
-    #print out["beam_end_parents"][0]
 
     for n in range(len(out["beam_symbols"])):
         beam_symbols = out["beam_symbols"][n]
@@ -89,55 +85,55 @@ def rank(res_list):
     return sorted_res
 
 def score_couplet(model_name, poem_sen, match_sens, probs):
-	poem_ws, poem_pos = tokenize_word(poem_sen, need_pos=True)
-	poem_sen_uni = poem_sen.decode("utf-8")
-	poem_pos_str = " ".join([str(e) for e in poem_pos])
+    poem_ws, poem_pos = tokenize_word(poem_sen, need_pos=True)
+    poem_sen_uni = poem_sen.decode("utf-8")
+    poem_pos_str = " ".join([str(e) for e in poem_pos])
 
-	# for mophological similarity
-	match_sen_cans = []
-	match_ws_cans = []
-	match_pos_cans = []
-	prob_cans = []
-	for i, each in enumerate(match_sens):
-		match_sen_uni = each.decode("utf-8")[0:len(poem_sen_uni)]
-		if len(match_sen_uni) != len(poem_sen_uni):
-			continue
+    # for mophological similarity
+    match_sen_cans = []
+    match_ws_cans = []
+    match_pos_cans = []
+    prob_cans = []
+    for i, each in enumerate(match_sens):
+        match_sen_uni = each.decode("utf-8")[0:len(poem_sen_uni)]
+        if len(match_sen_uni) != len(poem_sen_uni):
+            continue
 
-		moph_match = True 
-		for j in range(1, len(match_sen_uni)): 
-			if match_sen_uni[j] == match_sen_uni[j - 1] and poem_sen_uni[j] != poem_sen_uni[j - 1]:
-				moph_match = False 
-				logging.info("bad moph %s" % each)
-				break
-			if match_sen_uni[j] != match_sen_uni[j - 1] and poem_sen_uni[j] == poem_sen_uni[j - 1]:
-				logging.info("bad moph %s" % each)
-				moph_match = False 
-				break
-		for j in range(len(match_sen_uni)):
-			if match_sen_uni[j] == poem_sen_uni[j]:
-				logging.info("bad moph %s" % each)
-				moph_match = False 
-				break
+        moph_match = True 
+        for j in range(1, len(match_sen_uni)): 
+            if match_sen_uni[j] == match_sen_uni[j - 1] and poem_sen_uni[j] != poem_sen_uni[j - 1]:
+                moph_match = False 
+                logging.info("bad moph %s" % each)
+                break
+            if match_sen_uni[j] != match_sen_uni[j - 1] and poem_sen_uni[j] == poem_sen_uni[j - 1]:
+                logging.info("bad moph %s" % each)
+                moph_match = False 
+                break
+        for j in range(len(match_sen_uni)):
+            if match_sen_uni[j] == poem_sen_uni[j]:
+                logging.info("bad moph %s" % each)
+                moph_match = False 
+                break
 
-		if moph_match: 
-			w, pos = tokenize_word(each, need_pos=True)
-			match_ws_cans.append(w)
-			match_pos_cans.append(pos)
-			match_sen_cans.append(each)
-			prob_cans.append(probs[i])
+        if moph_match: 
+            w, pos = tokenize_word(each, need_pos=True)
+            match_ws_cans.append(w)
+            match_pos_cans.append(pos)
+            match_sen_cans.append(each)
+            prob_cans.append(probs[i])
 
-	# for pos similarity (NOT PRECISE)
-	for i, ws in enumerate(match_ws_cans):
-		if not ws: 
-			continue
-		if len(ws) != len(poem_ws):
-			continue
-		match_pos_str = " ".join([str(e) for e in match_pos_cans])
-		if match_pos_str == poem_pos_str: 
-			prob_cans[i] += 100
+    # for pos similarity (NOT PRECISE)
+    for i, ws in enumerate(match_ws_cans):
+        if not ws: 
+            continue
+        if len(ws) != len(poem_ws):
+            continue
+        match_pos_str = " ".join([str(e) for e in match_pos_cans])
+        if match_pos_str == poem_pos_str: 
+            prob_cans[i] += 100
 
-	# for tone match
-	return match_sen_cans, prob_cans 
+    # for tone match
+    return match_sen_cans, prob_cans 
 
 def score_with_prob_attn(model_name, ans, probs, attns, alpha=0.9, beta=0.1, is_ch=True, average_across_len=False):
     res = []
@@ -155,56 +151,68 @@ def score_with_prob_attn(model_name, ans, probs, attns, alpha=0.9, beta=0.1, is_
                 break
             if w == "":
                 continue
-            for c in w.decode("utf-8"):
-                if c in [u"。", u"，", u"？", u"！"]:
+
+            # for different language, handle dups and count puncs 
+            if is_ch:
+                for c in w.decode("utf-8"):
+                    if c in [u"。", u"，", u"？", u"！", u",", u"!", u"?", u"."]:
+                        punc_cnt += 1
+                    else:
+                        ch_bytes_cnt += 1 
+                    if c not in dup:
+                        dup[c] = 0
+                    dup[c] += 1
+            else:
+                if w.decode("utf-8") in [u",", u"!", u"?", u"."]:
                     punc_cnt += 1
-                else:
-                    ch_bytes_cnt += 1 
-                if c not in dup:
-                    dup[c] = 0
-                dup[c] += 1
+                if w not in dup:    
+                    dup[w] = 0
+                dup[w] += 1
+
             if j == 0 or w != words[-1]:
                 count == 0
                 words.append(w)
-            elif w.decode("utf-8") in [u"。", u"，", u"？", u"！"] and w == words[-1] and count < 2:
+            elif w.decode("utf-8") in [u"。", u"，", u"？", u"！", u",", u"!", u"?", u"."] and w == words[-1] and count < 2:
                 words.append(w)
                 count += 1
-            elif w.decode("utf-8") not in [u"。", u"，", u"？", u"！"] and len(w.decode("utf-8")) > 1 and w == words[-1]:
+            elif w.decode("utf-8") not in [u"。", u"，", u"？", u"！", u"!", u",", u"?", u"."] and len(w.decode("utf-8")) > 1 and w == words[-1]:
                 isdup = True
                 break
-        words = remove_rep(words)
+        #words = remove_rep(words)
         for each in dup: 
-            if each not in [u"。", u"，", u"？", u"哈"] and dup[each] > 2:
+            if each.decode("utf-8") not in [u"。", u"，", u"？", u"哈", u".", u",", u"!", u"?", u"'"] and dup[each] > 2:
                 isdup = True
                 break
             if dup[each] > 1:
                 dupcount += 1
                 #if (dupcount >= len(dup) / 2) and dupcount >= 2:
-                if dupcount >= 2:
+                if is_ch == True and dupcount >= 2:
                     isdup = True
                     break
-        attn_score = np.sum(attns[n], 0) / len(attns[n])
+        #attn_score = np.sum(attns[n], 0) / len(attns[n])
         enc_attn_scores = " "
         #enc_attn_scores = " ".join(["%.3f" % round(a, 4) for a in attn_score])
         #enc_attn_scores = (list(attn_score[0:36]), list(attn_score[36:]))
         #enc_attn_scores = "none"
 
-        lp_ratio = lp(ch_bytes_cnt, alpha)
-        #lp_ratio = lp(len(words), alpha)
+        #lp_ratio = lp(ch_bytes_cnt, alpha)
+        lp_ratio = lp(len(words), alpha)
         #lp_ratio = len(words) * 1.0  
         cp_score = 0.0 #cp(attns[n], beta)
         info = ""
         final = "".join(words) if is_ch else " ".join(words)
         seged = " ".join(words)
         
-        _, pos = tokenize_word(final, True)
+        # check NE
         NE = "" 
-        for p in pos:
-            if TOKEN[p] == "TC_NR" or TOKEN[p] == "TC_NRF" or TOKEN[p] == "TC_NRG":
-                NE = TOKEN[p] 
-                break
+        if is_ch:
+            _, pos = tokenize_word(final, True)
+            for p in pos:
+                if TOKEN[p] == "TC_NR" or TOKEN[p] == "TC_NRF" or TOKEN[p] == "TC_NRG":
+                    NE = TOKEN[p] 
+                    break
             
-
+        # check blacklist
         inbl = False
         for each in blacklist:
             hit = True 
@@ -216,6 +224,9 @@ def score_with_prob_attn(model_name, ans, probs, attns, alpha=0.9, beta=0.1, is_
                 inbl = True
                 break
 
+		if "_PAD" in words:
+			gnmt_score = -1000
+			info = "_PAD in sentence"
         if "_UNK" in ans[n]:
             gnmt_score = -1000
             info = "_UNK found"

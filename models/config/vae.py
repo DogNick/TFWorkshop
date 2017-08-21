@@ -27,7 +27,6 @@ confs["vae"].bidirectional                 = False
 confs["vae"].beam_splits                   = [1] 
 confs["vae"].tokenize_mode                 = "char" 
 
-
 #########################################
 confs["vae2-opensubtitle"] = copy.deepcopy(confs["vae"])
 confs["vae2-opensubtitle"].model_kind           = "VAERNN2"
@@ -81,29 +80,6 @@ confs["vae2-addmem-weibo"].addmem               = True
 confs["vae2-addmem-weibo"].kld_ratio            = 1 
 confs["vae2-addmem-weibo"].sample_prob          = 0.5
 
-##########################################
-confs["vae3-opensubtitle"] = copy.deepcopy(confs["vae"])
-confs["vae3-opensubtitle"].model_kind           = "VAERNN3"
-confs["vae3-opensubtitle"].input_vocab_size     = 20000
-confs["vae3-opensubtitle"].output_vocab_size    = 20000
-confs["vae3-opensubtitle"].lr_check_steps       = 150 
-confs["vae3-opensubtitle"].lr_keep_steps        = 80000  
-confs["vae3-opensubtitle"].learning_rate        = 0.00005
-confs["vae3-opensubtitle"].learning_rate_decay_factor = 1.0 
-confs["vae3-opensubtitle"].batch_size           = 64 
-confs["vae3-opensubtitle"].cell_model           = "LSTMCell"
-confs["vae3-opensubtitle"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle"
-confs["vae3-opensubtitle"].input_max_len        = 35 
-confs["vae3-opensubtitle"].output_max_len       = 35 
-confs["vae3-opensubtitle"].opt_name             = "Adam" 
-confs["vae3-opensubtitle"].enc_latent_dim       = 256 
-confs["vae3-opensubtitle"].lam                  = 0.0 
-confs["vae3-opensubtitle"].beam_splits          = [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
-confs["vae3-opensubtitle"].use_data_queue       = False
-confs["vae3-opensubtitle"].stddev               = 1.0 
-confs["vae3-opensubtitle"].addmem               = False 
-confs["vae3-opensubtitle"].kld_ratio            = 1.0 
-
 ######################################################################
 confs["cvae-opensubtitle"] = copy.deepcopy(confs["vae"])
 confs["cvae-opensubtitle"].model_kind           = "CVAERNN"
@@ -154,6 +130,7 @@ confs["cvae-noattn-opensubtitle_gt3"].kld_ratio            = 1.0
 confs["cvae-noattn-opensubtitle_gt3"].prior_type           = "mlp"
 confs["cvae-noattn-opensubtitle_gt3"].attention            = None 
 
+
 confs["cvae-noattn-64-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])
 confs["cvae-noattn-64-opensubtitle_gt3"].model_kind           = "CVAERNN"
 confs["cvae-noattn-64-opensubtitle_gt3"].input_vocab_size     = 20000
@@ -179,122 +156,6 @@ confs["cvae-noattn-64-opensubtitle_gt3"].addmem               = False
 confs["cvae-noattn-64-opensubtitle_gt3"].kld_ratio            = 1.0 
 confs["cvae-noattn-64-opensubtitle_gt3"].prior_type           = "mlp"
 confs["cvae-noattn-64-opensubtitle_gt3"].attention            = None 
-
-
-
-
-confs["attns2s-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])
-confs["attns2s-opensubtitle_gt3"].model_kind           = "AttnSeq2Seq"
-confs["attns2s-opensubtitle_gt3"].input_vocab_size     = 20000
-confs["attns2s-opensubtitle_gt3"].output_vocab_size    = 20000
-confs["attns2s-opensubtitle_gt3"].lr_check_steps       = 150 
-confs["attns2s-opensubtitle_gt3"].embedding_size       = 200
-confs["attns2s-opensubtitle_gt3"].lr_keep_steps        = 80000  
-confs["attns2s-opensubtitle_gt3"].learning_rate        = 0.0001
-confs["attns2s-opensubtitle_gt3"].learning_rate_decay_factor = 1.0 
-confs["attns2s-opensubtitle_gt3"].batch_size           = 128 
-confs["attns2s-opensubtitle_gt3"].cell_model           = "LSTMCell"
-confs["attns2s-opensubtitle_gt3"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3"
-confs["attns2s-opensubtitle_gt3"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3/opensubtitle_filter2k.w2v.npy"
-confs["attns2s-opensubtitle_gt3"].input_max_len        = 35 
-confs["attns2s-opensubtitle_gt3"].output_max_len       = 35 
-confs["attns2s-opensubtitle_gt3"].opt_name             = "Adam" 
-confs["attns2s-opensubtitle_gt3"].lam                  = 0.0 
-confs["attns2s-opensubtitle_gt3"].beam_splits          = [4,4,4,4,4,4,4]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
-confs["attns2s-opensubtitle_gt3"].use_data_queue       = False
-confs["attns2s-opensubtitle_gt3"].addmem               = True 
-confs["attns2s-opensubtitle_gt3"].attention            = "Luo" 
-
-confs["s2s-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])
-confs["s2s-opensubtitle_gt3"].model_kind           = "AttnSeq2Seq"
-confs["s2s-opensubtitle_gt3"].input_vocab_size     = 20000
-confs["s2s-opensubtitle_gt3"].output_vocab_size    = 20000
-confs["s2s-opensubtitle_gt3"].lr_check_steps       = 150 
-confs["s2s-opensubtitle_gt3"].embedding_size       = 200
-confs["s2s-opensubtitle_gt3"].lr_keep_steps        = 80000  
-confs["s2s-opensubtitle_gt3"].learning_rate        = 0.0001
-confs["s2s-opensubtitle_gt3"].learning_rate_decay_factor = 1.0 
-confs["s2s-opensubtitle_gt3"].batch_size           = 128 
-confs["s2s-opensubtitle_gt3"].cell_model           = "LSTMCell"
-confs["s2s-opensubtitle_gt3"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3"
-confs["s2s-opensubtitle_gt3"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3/opensubtitle_filter2k.w2v.npy"
-confs["s2s-opensubtitle_gt3"].input_max_len        = 35 
-confs["s2s-opensubtitle_gt3"].output_max_len       = 35 
-confs["s2s-opensubtitle_gt3"].opt_name             = "Adam" 
-confs["s2s-opensubtitle_gt3"].lam                  = 0.0 
-confs["s2s-opensubtitle_gt3"].beam_splits          = [20]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
-confs["s2s-opensubtitle_gt3"].use_data_queue       = False
-confs["s2s-opensubtitle_gt3"].addmem               = False 
-confs["s2s-opensubtitle_gt3"].attention            = None 
-
-confs["news2s-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])
-confs["news2s-opensubtitle_gt3"].model_kind           = "AttnS2SNewDecInit"
-confs["news2s-opensubtitle_gt3"].input_vocab_size     = 20000
-confs["news2s-opensubtitle_gt3"].output_vocab_size    = 20000
-confs["news2s-opensubtitle_gt3"].lr_check_steps       = 150 
-confs["news2s-opensubtitle_gt3"].embedding_size       = 200
-confs["news2s-opensubtitle_gt3"].lr_keep_steps        = 80000  
-confs["news2s-opensubtitle_gt3"].learning_rate        = 0.0001
-confs["news2s-opensubtitle_gt3"].learning_rate_decay_factor = 1.0 
-confs["news2s-opensubtitle_gt3"].batch_size           = 128 
-confs["news2s-opensubtitle_gt3"].cell_model           = "LSTMCell"
-confs["news2s-opensubtitle_gt3"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3"
-confs["news2s-opensubtitle_gt3"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3/opensubtitle_filter2k.w2v.npy"
-confs["news2s-opensubtitle_gt3"].input_max_len        = 35 
-confs["news2s-opensubtitle_gt3"].output_max_len       = 35 
-confs["news2s-opensubtitle_gt3"].opt_name             = "Adam" 
-confs["news2s-opensubtitle_gt3"].lam                  = 0.0 
-confs["news2s-opensubtitle_gt3"].beam_splits          = [20]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
-confs["news2s-opensubtitle_gt3"].use_data_queue       = False
-confs["news2s-opensubtitle_gt3"].addmem               = True 
-confs["news2s-opensubtitle_gt3"].attention            = "Luo" 
-
-confs["news2s-twitter"] = copy.deepcopy(confs["vae"])
-confs["news2s-twitter"].model_kind           = "AttnS2SNewDecInit"
-confs["news2s-twitter"].input_vocab_size     = 28320
-confs["news2s-twitter"].output_vocab_size    = 28320
-confs["news2s-twitter"].lr_check_steps       = 150 
-confs["news2s-twitter"].embedding_size       = 150 
-confs["news2s-twitter"].lr_keep_steps        = 80000  
-confs["news2s-twitter"].learning_rate        = 0.0001
-confs["news2s-twitter"].learning_rate_decay_factor = 1.0 
-confs["news2s-twitter"].batch_size           = 64 
-confs["news2s-twitter"].cell_model           = "LSTMCell"
-confs["news2s-twitter"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/merged_chaten"
-confs["news2s-twitter"].input_max_len        = 25 
-confs["news2s-twitter"].output_max_len       = 30 
-confs["news2s-twitter"].opt_name             = "Adam" 
-confs["news2s-twitter"].lam                  = 0.0 
-confs["news2s-twitter"].beam_splits          = [20]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
-confs["news2s-twitter"].use_data_queue       = False
-confs["news2s-twitter"].addmem               = False 
-confs["news2s-twitter"].attention            = "Luo"
-
-
-confs["attns2s-twitter"] = copy.deepcopy(confs["vae"])
-confs["attns2s-twitter"].model_kind           = "AttnSeq2Seq"
-confs["attns2s-twitter"].input_vocab_size     = 28320
-confs["attns2s-twitter"].output_vocab_size    = 28320
-confs["attns2s-twitter"].lr_check_steps       = 150  
-confs["attns2s-twitter"].embedding_size       = 200
-confs["attns2s-twitter"].lr_keep_steps        = 80000  
-confs["attns2s-twitter"].learning_rate        = 0.0001
-confs["attns2s-twitter"].learning_rate_decay_factor = 1.0 
-confs["attns2s-twitter"].batch_size           = 128 
-confs["attns2s-twitter"].cell_model           = "LSTMCell"
-confs["attns2s-twitter"].num_layers           = 3 
-confs["attns2s-twitter"].num_units            = 768 
-confs["attns2s-twitter"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/merged_chaten"
-#confs["attns2s-twitter"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3/opensubtitle_filter2k.w2v.npy"
-confs["attns2s-twitter"].input_max_len        = 35 
-confs["attns2s-twitter"].output_max_len       = 35 
-confs["attns2s-twitter"].opt_name             = "Adam" 
-confs["attns2s-twitter"].lam                  = 0.0 
-confs["attns2s-twitter"].beam_splits          = [6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
-confs["attns2s-twitter"].use_data_queue       = False
-confs["attns2s-twitter"].addmem               = False
-confs["attns2s-twitter"].attention            = "Luo" 
-confs["attns2s-twitter"].keep_prob            = 0.7 
 
 
 #######################################

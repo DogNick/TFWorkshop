@@ -17,12 +17,10 @@ from tensorflow.python.ops import variable_scope
 #from DeepMatchInteractQPRnegPR import *
 
 #from DynAttnTopicSeq2Seq import *
-from AttnSeq2Seq import *
 from VAERNN2 import * 
 from VAERNN import *
 from CVAERNN import *
 from AllAttn import *
-from AttnSeq2Seq import *
 from AttnS2SNewDecInit import *
 from KimCNN import *
 from RNNClassification import *
@@ -49,7 +47,6 @@ magic = {
         #"DeepMatchInteractConcatRNN": DeepMatchInteractConcatRNN,
 
         #"DynAttnTopicSeq2Seq": DynAttnTopicSeq2Seq,
-        "AttnSeq2Seq": AttnSeq2Seq,
         "VAERNN2": VAERNN2,
         "VAERNN": VAERNN,
         "CVAERNN": CVAERNN,
@@ -235,13 +232,16 @@ def init_inference(runtime_root, model_core, variants="", gpu="", ckpt_steps=Non
 	ckpt = tf.train.get_checkpoint_state(ckpt_dir, latest_filename=None)
 	filename = None
 	if ckpt_steps:
-		for each in ckpt.all_model_checkpoint_paths:
-			seged = re.split("\-", each)	
-			if str(ckpt_steps) == seged[-1]:
-				filename = each
+		names = filter(lambda x:re.match("model\.ckpt\-(\d+)\.meta", x) != None, os.listdir(ckpt_dir))
+		#for each in ckpt.all_model_checkpoint_paths:
+		for each in names:
+			seged = re.split("[\-\.]", each)	
+			if str(ckpt_steps) == seged[-2]:
+				filename = os.path.join(ckpt_dir, "model.ckpt-%d" % int(ckpt_steps))
 				break
 	else:
 		filename = ckpt.model_checkpoint_path
+		print filename
 		ckpt_steps = re.split("\-", filename)[-1]
 		print ("use latest %s as inference model" % ckpt_steps)
 	if filename == None:
