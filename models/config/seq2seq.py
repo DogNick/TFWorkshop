@@ -345,6 +345,30 @@ confs["news2s-opensubtitle_gt3"].use_data_queue       = False
 confs["news2s-opensubtitle_gt3"].addmem               = True 
 confs["news2s-opensubtitle_gt3"].attention            = "Luo" 
 
+confs["news2s-opensubtitle_gt3_reverse"] = copy.deepcopy(confs["vae"])
+confs["news2s-opensubtitle_gt3_reverse"].model_kind           = "AttnS2SNewDecInit"
+confs["news2s-opensubtitle_gt3_reverse"].input_vocab_size     = 20000
+confs["news2s-opensubtitle_gt3_reverse"].output_vocab_size    = 20000
+confs["news2s-opensubtitle_gt3_reverse"].lr_check_steps       = 150 
+confs["news2s-opensubtitle_gt3_reverse"].embedding_size       = 200
+confs["news2s-opensubtitle_gt3_reverse"].lr_keep_steps        = 80000  
+confs["news2s-opensubtitle_gt3_reverse"].learning_rate        = 0.0001
+confs["news2s-opensubtitle_gt3_reverse"].learning_rate_decay_factor = 1.0 
+confs["news2s-opensubtitle_gt3_reverse"].batch_size           = 128 
+confs["news2s-opensubtitle_gt3_reverse"].cell_model           = "LSTMCell"
+confs["news2s-opensubtitle_gt3_reverse"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3"
+confs["news2s-opensubtitle_gt3_reverse"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3/opensubtitle_filter2k.w2v.npy"
+confs["news2s-opensubtitle_gt3_reverse"].input_max_len        = 35 
+confs["news2s-opensubtitle_gt3_reverse"].output_max_len       = 35 
+confs["news2s-opensubtitle_gt3_reverse"].opt_name             = "Adam" 
+confs["news2s-opensubtitle_gt3_reverse"].lam                  = 0.0 
+confs["news2s-opensubtitle_gt3_reverse"].beam_splits          = [6,6,6,6,6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
+confs["news2s-opensubtitle_gt3_reverse"].use_data_queue       = False
+confs["news2s-opensubtitle_gt3_reverse"].addmem               = True 
+confs["news2s-opensubtitle_gt3_reverse"].attention            = "Luo" 
+confs["news2s-opensubtitle_gt3_reverse"].reverse              = True 
+
+
 confs["news2s-noinit-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])
 confs["news2s-noinit-opensubtitle_gt3"].model_kind           = "AttnS2SNewDecInit"
 confs["news2s-noinit-opensubtitle_gt3"].input_vocab_size     = 20000

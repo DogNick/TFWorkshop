@@ -32,20 +32,23 @@ graphlg = log.getLogger("graph")
 trainlg = log.getLogger("train")
 train_root = "/search/odin/Nick/GenerateWorkshop/runtime"
 def main():
-	name = "data/twitter_25w_filter_len_unk/test"
+	#name = "data/twitter_25w_filter_len_unk/test"
 	#name = "data/opensubtitle_gt3/test"
+	name = "test_data/fangfei_lt10_0401_formalized"
+
 
 	# get graph configuration
 	runtime_names = [
-		"news2s-opensubtitle_gt3",
-		#"news2s-noinit-opensubtitle_gt3",
-		#"news2s-twitter",
-		#"news2s-twitter-clean"
-		#"cvae-noattn-opensubtitle_gt3"
+		#("news2s-opensubtitle_gt3", None)
+		("news2s-noinit-opensubtitle_gt3", None)
+		#("news2s-twitter", None)
+		#("news2s-twitter-clean", 89401)
+		#("cvae-noattn-opensubtitle_gt3", None)
 	]
 	scorer_names = [ 
 		#"attn-bi-s2s-all-downsample-addmem2",
 		#"attn-s2s-all-downsample-n-gram-addmem"
+		("news2s-opensubtitle_gt3_reverse",  None)
 	]
 
 	records = []
@@ -60,26 +63,26 @@ def main():
 
 	runtimes = {}
 	scorer = {} 
-	for model_name in runtime_names:
+	for model_name, ckpt_steps in runtime_names:
 		ckpt_dir = os.path.join(train_root, model_name) 
 		model = create(model_name, job_type="single", task_id=0)
-		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=train_root, model_core=model, gpu=FLAGS.gpu)
+		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=train_root, model_core=model, gpu=FLAGS.gpu, ckpt_steps=ckpt_steps)
 		runtimes[model_name] = (sess, graph_nodes, model)
 		tf.reset_default_graph()
 
 	#for score
-	for model_name in scorer_names:
+	for model_name, ckpt_steps in scorer_names:
 		ckpt_dir = os.path.join(train_root, model_name) 
 		model = create(model_name, job_type="single", task_id=0)
 		model.conf.for_score = True
-		sess, graph_nodes, global_steps = model.init_infer(gpu="2", runtime_root=train_root)
+		sess, graph_nodes, global_steps = model.init_inference(gpu="2", runtime_root=train_root, ckpt_steps)
 		scorer[model_name] = (sess, graph_nodes, model)
 		tf.reset_default_graph()
 
 	for i in range(0, len(records), FLAGS.batch_size):
 		batch_res_of_all_models = []
 		batch = records[i:i+FLAGS.batch_size]
-		for name in runtime_names:
+		for name, _ in runtime_names:
 			sess, graph_nodes, model = runtimes[name]
 			input_feed = model.preproc(batch, use_seg=(FLAGS.lan=="ch"), for_deploy=True) 
 			step_out = sess.run(graph_nodes["outputs"], input_feed)

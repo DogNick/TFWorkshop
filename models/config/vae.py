@@ -27,6 +27,34 @@ confs["vae"].bidirectional                 = False
 confs["vae"].beam_splits                   = [1] 
 confs["vae"].tokenize_mode                 = "char" 
 
+confs["vaeattn-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])
+confs["vaeattn-opensubtitle_gt3"].model_kind           = "VAEattnRNN"
+confs["vaeattn-opensubtitle_gt3"].input_vocab_size     = 20000
+confs["vaeattn-opensubtitle_gt3"].output_vocab_size    = 20000 
+confs["vaeattn-opensubtitle_gt3"].lr_check_steps       = 150 
+confs["vaeattn-opensubtitle_gt3"].embedding_size       = 200 
+confs["vaeattn-opensubtitle_gt3"].lr_keep_steps        = 80000  
+confs["vaeattn-opensubtitle_gt3"].learning_rate        = 0.0001
+confs["vaeattn-opensubtitle_gt3"].num_layers           = 3 
+confs["vaeattn-opensubtitle_gt3"].learning_rate_decay_factor = 1.0 
+confs["vaeattn-opensubtitle_gt3"].batch_size           = 64 
+confs["vaeattn-opensubtitle_gt3"].cell_model           = "LSTMCell"
+confs["vaeattn-opensubtitle_gt3"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3"
+confs["vaeattn-opensubtitle_gt3"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3/opensubtitle_filter2k.w2v.npy"
+confs["vaeattn-opensubtitle_gt3"].addmem               = True 
+confs["vaeattn-opensubtitle_gt3"].input_max_len        = 35
+confs["vaeattn-opensubtitle_gt3"].output_max_len       = 35
+confs["vaeattn-opensubtitle_gt3"].opt_name             = "Adam" 
+confs["vaeattn-opensubtitle_gt3"].enc_latent_dim       = 256 
+confs["vaeattn-opensubtitle_gt3"].lam                  = 0.0 
+confs["vaeattn-opensubtitle_gt3"].beam_splits          = [8,8,8,8,8,8,8,8,8] 
+confs["vaeattn-opensubtitle_gt3"].use_data_queue       = False
+confs["vaeattn-opensubtitle_gt3"].stddev               = 1.0 
+confs["vaeattn-opensubtitle_gt3"].kld_ratio            = 0.1 
+confs["vaeattn-opensubtitle_gt3"].sample_prob          = 0.0 
+confs["vaeattn-opensubtitle_gt3"].addmem               = False 
+
+
 #########################################
 confs["vae2-opensubtitle"] = copy.deepcopy(confs["vae"])
 confs["vae2-opensubtitle"].model_kind           = "VAERNN2"

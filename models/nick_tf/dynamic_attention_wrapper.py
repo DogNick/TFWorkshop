@@ -190,7 +190,7 @@ class LuongAttention(_BaseAttentionMechanism):
   """
 
   def __init__(self, num_units, memory, max_mem_size, memory_sequence_length=None,
-               normalize=False, attention_r_initializer=None,
+               normalize=False, attention_r_initializer=None, z=None,
                name="LuongAttention"):
     """Construct the AttentionMechanism mechanism.
 
@@ -218,6 +218,7 @@ class LuongAttention(_BaseAttentionMechanism):
     self._num_units = num_units
     self._normalize = normalize
     self._name = name
+    self._z = z
     if normalize and attention_r_initializer is None:
       attention_r_initializer = 0
     if normalize:
@@ -242,8 +243,8 @@ class LuongAttention(_BaseAttentionMechanism):
     Raises:
       ValueError: If `key` and `query` depths do not match.
     """
-    depth = query.get_shape()[-1]
-    key_units = self.keys.get_shape()[-1]
+    depth = int(query.get_shape()[-1])
+    key_units = int(self.keys.get_shape()[-1])
     if depth != key_units:
       raise ValueError(
           "Incompatible or unknown inner dimensions between query and keys.  "
@@ -255,7 +256,6 @@ class LuongAttention(_BaseAttentionMechanism):
     with ops.name_scope(None, "LuongAttentionCall", [query]):
       # Reshape from [batch_size, depth] to [batch_size, 1, depth]
       # for matmul.
-      query = array_ops.expand_dims(query, 1)
 
       # Inner product along the query units dimension.
       # matmul shapes: query is [batch_size, 1, depth] and
@@ -274,7 +274,15 @@ class LuongAttention(_BaseAttentionMechanism):
           keys = self._keys
 
       #keys = tf.Print(keys, [tf.shape(keys)], message="keys")
-      score = math_ops.matmul(query, keys, transpose_b=True)
+      if self._z != None:
+          l = tf.shape(keys)[1]
+          latent_size = int(self._z.get_shape()[1])
+          q_w = variable_scope.get_variable("q_w", shape=[depth + int(self._z.get_shape()[-1]), depth], dtype=dtype)
+          query_z = tf.expand_dims(tf.matmul(tf.concat([query, self._z], 1), q_w), 1)
+          score = math_ops.matmul(query_z, keys, transpose_b=True)
+      else:
+          query = array_ops.expand_dims(query, 1)
+          score = math_ops.matmul(query, keys, transpose_b=True)
       score = array_ops.squeeze(score, [1])
 
       if self._normalize:

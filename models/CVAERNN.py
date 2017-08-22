@@ -376,7 +376,7 @@ class CVAERNN(ModelCore):
 				"loss":None,
 				"inputs":inputs,
 				"outputs":outputs,
-				"visualize":{}
+				"visualize":{"z":z}
 			}
 
 			return graph_nodes

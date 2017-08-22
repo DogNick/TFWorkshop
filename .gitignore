@@ -23,3 +23,5 @@ YDP
 tornado_html.py
 online_package
 test.py
+test_res/
+test_data/

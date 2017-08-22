@@ -224,10 +224,10 @@ def score_with_prob_attn(model_name, ans, probs, attns, alpha=0.9, beta=0.1, is_
                 inbl = True
                 break
 
-		if "_PAD" in words:
-			gnmt_score = -1000
-			info = "_PAD in sentence"
-        if "_UNK" in ans[n]:
+        if "_PAD" in words:
+            gnmt_score = -1000
+            info = "_PAD in sentence"
+        elif "_UNK" in ans[n]:
             gnmt_score = -1000
             info = "_UNK found"
         elif isdup:

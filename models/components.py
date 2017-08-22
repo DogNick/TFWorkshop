@@ -70,7 +70,7 @@ def CreateMultiRNNCell(cell_name, num_units, num_layers=1, output_keep_prob=1.0,
 			cells.append(single_cell)
 	return MultiRNNCell(cells)
 
-def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max_mem_size, keep_prob=1.0, addmem=False, dtype=tf.float32, name_scope="attn_cell"):
+def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max_mem_size, keep_prob=1.0, addmem=False, z=None, dtype=tf.float32, name_scope="attn_cell"):
 	# Attention  
 	"""Wrap a cell by specific attention mechanism with some memory
 	Params:
@@ -81,7 +81,7 @@ def AttnCell(cell_model, num_units, num_layers, memory, mem_lens, attn_type, max
 		if attn_type == "Luo":
 			mechanism = dynamic_attention_wrapper.LuongAttention(num_units=num_units, memory=memory,
 																	max_mem_size=max_mem_size,
-																	memory_sequence_length=mem_lens)
+																	memory_sequence_length=mem_lens, z=z)
 		elif attn_type == "Bah":
 			mechanism = dynamic_attention_wrapper.BahdanauAttention(num_units=num_units, memory=memory, 
 																	max_mem_size=max_mem_size,
@@ -132,15 +132,15 @@ def DecStateInit(all_enc_states, decoder_cell, batch_size, init_type="each2each"
 			enc_state = tf.concat(all_enc_states, 1)
 			dec_state = dec_zero_states[0]
 			if isinstance(dec_state, LSTMStateTuple):
-				init_h = tf.layers.dense(enc_state, dec_state.h.get_shape()[1], name="ToDecShape")
-				init_c = tf.layers.dense(enc_state, dec_state.c.get_shape()[1], name="ToDecShape")
+				init_h = tf.layers.dense(enc_state, dec_state.h.get_shape()[1], name="ToDecShape_h")
+				init_c = tf.layers.dense(enc_state, dec_state.c.get_shape()[1], name="ToDecShape_c")
 				init_states.append(LSTMStateTuple(init_c, init_h))
 			else:
 				init = tf.layers.dense(enc_state, dec_state.get_shape()[1], name="ToDecShape")
 				init_states.append(init)
 			init_states.extend(dec_zero_states[1:])
 		elif init_type == "allzeros":
-			init_states.dec_zero_states
+			init_states = dec_zero_states
 		else:	
 			print "init type %s unknonw !!!" % init_type
 			exit(0)

@@ -22,6 +22,7 @@ from VAERNN import *
 from CVAERNN import *
 from AllAttn import *
 from AttnS2SNewDecInit import *
+from VAEattnRNN import *
 from KimCNN import *
 from RNNClassification import *
 
@@ -49,6 +50,7 @@ magic = {
         #"DynAttnTopicSeq2Seq": DynAttnTopicSeq2Seq,
         "VAERNN2": VAERNN2,
         "VAERNN": VAERNN,
+		"VAEattnRNN": VAEattnRNN,
         "CVAERNN": CVAERNN,
         "RNNClassification": RNNClassification,
         "Postprob": Postprob,
