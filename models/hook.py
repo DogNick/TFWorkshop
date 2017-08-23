@@ -148,7 +148,7 @@ class NickCheckpointSaverHook(session_run_hook.SessionRunHook):
 		self._fetch_data_fn = model_core.fetch_data
 		self._dev_fetches = dev_fetches
 		self._firein_steps = firein_steps
-		self._summary_tag_scope = "%s/%s" % (model_core.model_kind,model_core.name)
+		self._summary_tag_scope = model_core.model_kind
 
 		self._dev_n = dev_n
 		self._dev_batch_size = dev_batch_size

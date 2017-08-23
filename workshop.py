@@ -116,8 +116,8 @@ def main(_):
 		model.dummy_train(sess, graph_nodes)
 	elif FLAGS.cmd == "test":
 		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
-		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu, ckpt_steps=FLAGS.ckpt_steps)
-		model.test(sess, graph_nodes, use_seg=FLAGS.use_seg)
+		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, variants=FLAGS.variants, gpu=FLAGS.gpu, ckpt_steps=FLAGS.ckpt_steps)
+		model.test(sess, graph_nodes, use_seg=FLAGS.use_seg, variants=FLAGS.variants)
 	elif FLAGS.cmd == "train":
 		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 		if model.conf.cluster and FLAGS.job_type == "worker" or FLAGS.job_type == "single":

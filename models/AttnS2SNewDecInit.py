@@ -104,7 +104,7 @@ class AttnS2SNewDecInit(ModelCore):
 							max_mem_size=max_mem_size, addmem=self.conf.addmem, keep_prob=conf.keep_prob,
 							dtype=tf.float32, name_scope="AttnCell")
 
-			dec_init_state = DecStateInit(all_enc_states=beam_init_states, decoder_cell=cell, batch_size=batch_size * self.beam_size, init_type="each2each")
+			dec_init_state = DecStateInit(all_enc_states=beam_init_states, decoder_cell=cell, batch_size=batch_size * self.beam_size, init_type=conf.dec_init_type, use_proj=conf.use_init_proj)
 
 			if not for_deploy: 
 				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, 
@@ -114,12 +114,11 @@ class AttnS2SNewDecInit(ModelCore):
 				my_decoder = basic_decoder.BasicDecoder(cell=cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, impute_finished=True, maximum_iterations=conf.output_max_len + 1, scope=scope)
 			elif variants == "score":
-				dec_init_state = zero_attn_states
 				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, embedding=self.embedding, sampling_probability=0.0,
 																   out_proj=(w, b))
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
 				my_decoder = score_decoder.ScoreDecoder(cell=cell, helper=hp_train, out_proj=(w, b), initial_state=dec_init_state, output_layer=output_layer)
-				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len, impute_finished=False)
+				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=self.conf.output_max_len, impute_finished=True)
 			else:
 				hp_infer = helper.GreedyEmbeddingHelper(embedding=self.embedding,
 														start_tokens=tf.ones(shape=[batch_size * self.beam_size], dtype=tf.int32),
@@ -151,6 +150,7 @@ class AttnS2SNewDecInit(ModelCore):
 				# wgts may be a more complicated form, for example a partial down-weighting of a sequence
 				# but here i just use  1.0 weights for all no-padding label
 				wgts = tf.cumsum(tf.one_hot(self.dec_lens, L), axis=1, reverse=True)
+
 				#wgts = wgts * tf.expand_dims(self.down_wgts, 1)
 
 				loss_matrix = loss.sequence_loss(logits=logits, targets=tars, weights=wgts, average_across_timesteps=False, average_across_batch=False)
@@ -199,7 +199,7 @@ class AttnS2SNewDecInit(ModelCore):
 			beam_end_probs = tf.reshape(tf.transpose(beam_end_probs, [0, 2, 1]), [-1, L])
 
 			## Creating tail_ids 
-			batch_size = tf.Print(batch_size, [batch_size], message="VAERNN2 batch")
+			batch_size = tf.Print(batch_size, [batch_size], message="BATCH")
 			batch_offset = tf.expand_dims(tf.cumsum(tf.ones([batch_size, self.beam_size], dtype=tf.int32) * self.beam_size, axis=0, exclusive=True), 2)
 			offset2 = tf.expand_dims(tf.cumsum(tf.ones([batch_size, self.beam_size * 2], dtype=tf.int32) * self.beam_size, axis=0, exclusive=True), 2)
 

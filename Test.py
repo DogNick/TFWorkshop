@@ -35,20 +35,27 @@ def main():
 	#name = "data/twitter_25w_filter_len_unk/test"
 	#name = "data/opensubtitle_gt3/test"
 	name = "test_data/fangfei_lt10_0401_formalized"
-
+	#name = "test_data/fangfei_lt10_0401_jointprime"
+	#name = "test_data/fangfei_lt10_0401_formalized_ask"
+	#name = "test_data/fangfei_lt10_0401_jointprime_ask"
 
 	# get graph configuration
 	runtime_names = [
 		#("news2s-opensubtitle_gt3", None)
-		("news2s-noinit-opensubtitle_gt3", None)
+		#("vaeattn-opensubtitle_gt3", None)
+		#("vaeattn-opensubtitle_gt3_joint_prime", None)
+		#("news2s-opensubtitle_gt3_joint_prime", None)
+		#("news2s-noinit-opensubtitle_gt3", None)
 		#("news2s-twitter", None)
 		#("news2s-twitter-clean", 89401)
-		#("cvae-noattn-opensubtitle_gt3", None)
+		("cvae-noattn-opensubtitle_gt3", None)
+		#("news2s-opensubtitle_gt3_joint_prime", None)
 	]
 	scorer_names = [ 
 		#"attn-bi-s2s-all-downsample-addmem2",
 		#"attn-s2s-all-downsample-n-gram-addmem"
-		("news2s-opensubtitle_gt3_reverse",  None)
+		#("news2s-opensubtitle_gt3_reverse",  None)
+		("news2s-opensubtitle_gt3_joint_reverse",  None)
 	]
 
 	records = []
@@ -66,7 +73,7 @@ def main():
 	for model_name, ckpt_steps in runtime_names:
 		ckpt_dir = os.path.join(train_root, model_name) 
 		model = create(model_name, job_type="single", task_id=0)
-		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=train_root, model_core=model, gpu=FLAGS.gpu, ckpt_steps=ckpt_steps)
+		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=train_root, model_core=model, variants="", gpu=FLAGS.gpu, ckpt_steps=ckpt_steps)
 		runtimes[model_name] = (sess, graph_nodes, model)
 		tf.reset_default_graph()
 
@@ -74,8 +81,7 @@ def main():
 	for model_name, ckpt_steps in scorer_names:
 		ckpt_dir = os.path.join(train_root, model_name) 
 		model = create(model_name, job_type="single", task_id=0)
-		model.conf.for_score = True
-		sess, graph_nodes, global_steps = model.init_inference(gpu="2", runtime_root=train_root, ckpt_steps)
+		sess, graph_nodes, global_steps = init_inference(runtime_root=train_root, model_core=model, variants="score", gpu=FLAGS.gpu, ckpt_steps=ckpt_steps)
 		scorer[model_name] = (sess, graph_nodes, model)
 		tf.reset_default_graph()
 
@@ -101,10 +107,33 @@ def main():
 
 			# Nick's re-score and some interference
 			batch_res = [] 
-			for example_res in out_after_proc:
+			r = 0.37
+			for k, example_res in enumerate(out_after_proc):
 				outputs = [each["outputs"] for each in example_res]
 				probs = [each["probs"] for each in example_res]
-				scored_res = Nick_plan.score_with_prob_attn(name, outputs, probs, None, alpha=0.8, beta=0.2, is_ch=(FLAGS.lan=="ch"), average_across_len=True)
+
+				# Use Model scoring	
+				pairs = ["%s\t%s" % (batch[k], " ".join(each)) for each in outputs]
+				if len(pairs) == 0:
+					continue
+				scores = []
+				for score_model_name in scorer:
+					score_sess, score_graph_nodes, score_model = scorer[score_model_name]
+					score_input_feed = score_model.preproc(pairs, use_seg=(FLAGS.lan=="ch"), for_deploy=True, variants="score")
+					score_out = score_sess.run(score_graph_nodes["outputs"], score_input_feed)
+					scores.append(score_out["logprobs"])
+
+				new_probs = [r * probs[l] + (1-r) * p for l, p in enumerate(scores[0])] 
+				#new_probs = probs
+				scored_res = Nick_plan.score_with_prob_attn(name, outputs, new_probs, None, alpha=0.4, beta=0.2, is_ch=(FLAGS.lan=="ch"), average_across_len=False)
+
+				#(model_name, final, info, gnmt_score, probs[n], lp_ratio, cp_score, enc_attn_scores, seged))
+				for l in range(len(scored_res)):
+					scored_res[l] = list(scored_res[l])
+					#scored_res[l][3] = r*scored_res[l][3] + (1-r) * scores[0][l] 
+					scored_res[l][4] = probs[l]
+					scored_res[l][5] = scores[0][l]
+				 
 				batch_res.append(scored_res)
 				#batch_res.append([(name, "".join(each[0]), "None", 0, 0, 0, 0, 0, "None")]) 
 
@@ -130,7 +159,7 @@ def main():
 				print "==================================="
 				for each in final_res[0:80]:
 					#print each[0], each[-1], each[2], "[All:%.5f]" % each[3], "[Org:%.5f]" % each[4], "[LenRatio:%.5f]" % each[5], "[AttnEnt:%.5f]" % each[6]
-					print each[0], each[1], each[2], each[3]
+					print each[0], each[1], each[2], each[3], each[4], each[5]
 				raw_input()
 			elif FLAGS.command == "dump":
 				if len(final_res) == 0:

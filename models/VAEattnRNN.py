@@ -283,15 +283,10 @@ class VAEattnRNN(ModelCore):
 
 	def after_proc(self, out):
 		outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
-		outs = [(outputs[0][i], probs[0][i]) for i in range(len(outputs[0]))]			
+
+		outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]
+
 		#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
-		sorted_outs = sorted(outs, key=lambda x:x[1], reverse=True)
-
-		after_proc_out = {
-			"outs_probs": sorted_outs
-		}
-		return after_proc_out 
-
-	def print_after_proc(self, after_proc):
-		for each in after_proc["outs_probs"]:
-			print " ".join(each[0]),"\t",each[1] 
+		#sorted_outs = [sorted(outs[n], key=lambda x:x[1], reverse=True) for n in range(len(outs))]
+		after_proc_out = [[{"outputs":res[0], "probs":res[1]} for res in example] for example in outs]
+		return after_proc_out

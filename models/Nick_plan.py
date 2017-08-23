@@ -19,7 +19,7 @@ def lp(length, alpha):
     #return pow(5 + length / 6, alpha)
 
     #lp_ratio = pow((0.1 + length) / 4.1, alpha)
-    lp_ratio = pow((3.0 + length) / 5.0, alpha)
+    lp_ratio = pow((1 + length) / 6.0, alpha)
     return lp_ratio 
 
 def cp(attn_scores, beta):
@@ -36,10 +36,12 @@ def handle_beam_out(out, beam_splits):
     for n in range(len(out["beam_symbols"])):
         beam_symbols = out["beam_symbols"][n]
         beam_parents = out["beam_parents"][n]
+
         beam_ends = out["beam_ends"][n]
         beam_end_parents = out["beam_end_parents"][n]
         beam_end_probs = out["beam_end_probs"][n]
         beam_attns = out["beam_attns"][n]
+
         k = len(beam_symbols[0]) - 1
         example_outputs = [] 
         example_probs = []

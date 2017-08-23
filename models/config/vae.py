@@ -50,9 +50,37 @@ confs["vaeattn-opensubtitle_gt3"].lam                  = 0.0
 confs["vaeattn-opensubtitle_gt3"].beam_splits          = [8,8,8,8,8,8,8,8,8] 
 confs["vaeattn-opensubtitle_gt3"].use_data_queue       = False
 confs["vaeattn-opensubtitle_gt3"].stddev               = 1.0 
-confs["vaeattn-opensubtitle_gt3"].kld_ratio            = 0.1 
+confs["vaeattn-opensubtitle_gt3"].kld_ratio            = 0.001 
 confs["vaeattn-opensubtitle_gt3"].sample_prob          = 0.0 
 confs["vaeattn-opensubtitle_gt3"].addmem               = False 
+
+confs["vaeattn-opensubtitle_gt3_joint_prime"] = copy.deepcopy(confs["vae"])
+confs["vaeattn-opensubtitle_gt3_joint_prime"].model_kind           = "VAEattnRNN"
+confs["vaeattn-opensubtitle_gt3_joint_prime"].input_vocab_size     = 8000 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].output_vocab_size    = 8000 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].lr_check_steps       = 150 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].embedding_size       = 200 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].lr_keep_steps        = 80000  
+confs["vaeattn-opensubtitle_gt3_joint_prime"].learning_rate        = 0.0001
+confs["vaeattn-opensubtitle_gt3_joint_prime"].num_layers           = 3 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].learning_rate_decay_factor = 1.0 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].batch_size           = 64 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].cell_model           = "LSTMCell"
+confs["vaeattn-opensubtitle_gt3_joint_prime"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3_joint_prime"
+confs["vaeattn-opensubtitle_gt3_joint_prime"].addmem               = True 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].input_max_len        = 35
+confs["vaeattn-opensubtitle_gt3_joint_prime"].output_max_len       = 35
+confs["vaeattn-opensubtitle_gt3_joint_prime"].opt_name             = "Adam" 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].enc_latent_dim       = 256 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].lam                  = 0.0 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].beam_splits          = [8,8,8,8,8,8,8,8,8,8] 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].use_data_queue       = False
+confs["vaeattn-opensubtitle_gt3_joint_prime"].stddev               = 1.0 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].kld_ratio            = 0.0001 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].sample_prob          = 0.0 
+confs["vaeattn-opensubtitle_gt3_joint_prime"].addmem               = False
+confs["vaeattn-opensubtitle_gt3_joint_prime"].dec_init_type        = "allzeros"
+
 
 
 #########################################
@@ -109,29 +137,6 @@ confs["vae2-addmem-weibo"].kld_ratio            = 1
 confs["vae2-addmem-weibo"].sample_prob          = 0.5
 
 ######################################################################
-confs["cvae-opensubtitle"] = copy.deepcopy(confs["vae"])
-confs["cvae-opensubtitle"].model_kind           = "CVAERNN"
-confs["cvae-opensubtitle"].input_vocab_size     = 30000
-confs["cvae-opensubtitle"].output_vocab_size    = 30000
-confs["cvae-opensubtitle"].lr_check_steps       = 150 
-confs["cvae-opensubtitle"].lr_keep_steps        = 80000  
-confs["cvae-opensubtitle"].learning_rate        = 0.0001
-confs["cvae-opensubtitle"].learning_rate_decay_factor = 1.0 
-confs["cvae-opensubtitle"].batch_size           = 128 
-confs["cvae-opensubtitle"].cell_model           = "LSTMCell"
-confs["cvae-opensubtitle"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle"
-confs["cvae-opensubtitle"].input_max_len        = 35 
-confs["cvae-opensubtitle"].output_max_len       = 35 
-confs["cvae-opensubtitle"].opt_name             = "Adam" 
-confs["cvae-opensubtitle"].enc_latent_dim       = 512 
-confs["cvae-opensubtitle"].lam                  = 0.0 
-confs["cvae-opensubtitle"].beam_splits          = [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
-confs["cvae-opensubtitle"].use_data_queue       = False
-confs["cvae-opensubtitle"].stddev               = 1.0 
-confs["cvae-opensubtitle"].addmem               = True 
-confs["cvae-opensubtitle"].kld_ratio            = 1.0 
-confs["cvae-opensubtitle"].prior_type           = "mlp" 
-
 confs["cvae-noattn-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])
 confs["cvae-noattn-opensubtitle_gt3"].model_kind           = "CVAERNN"
 confs["cvae-noattn-opensubtitle_gt3"].input_vocab_size     = 20000
@@ -150,13 +155,40 @@ confs["cvae-noattn-opensubtitle_gt3"].output_max_len       = 35
 confs["cvae-noattn-opensubtitle_gt3"].opt_name             = "Adam" 
 confs["cvae-noattn-opensubtitle_gt3"].enc_latent_dim       = 256 
 confs["cvae-noattn-opensubtitle_gt3"].lam                  = 0.0 
-confs["cvae-noattn-opensubtitle_gt3"].beam_splits          = [6,6,6,6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
+confs["cvae-noattn-opensubtitle_gt3"].beam_splits          = [1,1,1,1,1,1,1]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
 confs["cvae-noattn-opensubtitle_gt3"].use_data_queue       = False
 confs["cvae-noattn-opensubtitle_gt3"].stddev               = 1.0 
 confs["cvae-noattn-opensubtitle_gt3"].addmem               = False 
 confs["cvae-noattn-opensubtitle_gt3"].kld_ratio            = 1.0 
 confs["cvae-noattn-opensubtitle_gt3"].prior_type           = "mlp"
 confs["cvae-noattn-opensubtitle_gt3"].attention            = None 
+
+confs["cvaeattn-opensubtitle_gt3_joint_prime"] = copy.deepcopy(confs["vae"])
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].model_kind           = "CVAERNN"
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].input_vocab_size     = 20000
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].output_vocab_size    = 20000
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].lr_check_steps       = 150 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].lr_keep_steps        = 80000  
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].embedding_size       = 200
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].learning_rate        = 0.0001
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].learning_rate_decay_factor = 1.0 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].batch_size           = 128 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].cell_model           = "LSTMCell"
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3"
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3/opensubtitle_filter2k.w2v.npy"
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].input_max_len        = 35 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].output_max_len       = 35 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].opt_name             = "Adam" 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].enc_latent_dim       = 256 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].lam                  = 0.0 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].beam_splits          = [1,1,1,1,1,1,1]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].use_data_queue       = False
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].stddev               = 1.0 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].addmem               = False 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].kld_ratio            = 1.0 
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].prior_type           = "mlp"
+confs["cvaeattn-opensubtitle_gt3_joint_prime"].attention            = None
+
 
 
 confs["cvae-noattn-64-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])

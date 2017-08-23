@@ -192,7 +192,7 @@ class ModelCore(object):
 		with tf.device(device):
 			#with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
 			graphlg.info("Building main graph...")	
-			graph_nodes = self.build(for_deploy, variants="")
+			graph_nodes = self.build(for_deploy, variants=variants)
 			graphlg.info("Collecting trainable params...")
 			self.trainable_params.extend(tf.trainable_variables())
 			if not for_deploy:	
@@ -276,16 +276,11 @@ class ModelCore(object):
 			tf.add_to_collection(tf.GraphKeys.GLOBAL_STEP, self.global_step)
 		return update
 
-	def preproc(self, records, for_deploy=False, use_seg=False, default_wgt=1.0):
+	def preproc(self, records, for_deploy=False, use_seg=False, default_wgt=1.0, variants=""):
 		# parsing
 		data = []
 		for each in records:
-			if for_deploy:
-				p = each.strip()
-				words, _ = tokenize_word(p) if use_seg else (re.split(" +", p), None)
-				p_list = words
-				data.append([p_list, len(p_list) + 1, [], 1, 1.0])
-			else:
+			if not for_deploy or variants == "score":
 				segs = re.split("\t", each.strip())
 				if len(segs) < 2:
 					continue
@@ -297,6 +292,11 @@ class ModelCore(object):
 				if self.conf.reverse:
 					p_list, r_list = r_list, p_list
 				data.append([p_list, len(p_list) + 1, r_list, len(r_list) + 1, down_wgts])
+			else:
+				p = each.strip()
+				words, _ = tokenize_word(p) if use_seg else (re.split(" +", p), None)
+				p_list = words
+				data.append([p_list, len(p_list) + 1, [], 1, 1.0])
 
 		# batching
 		conf = self.conf
@@ -311,7 +311,7 @@ class ModelCore(object):
 
 			batch_enc_inps.append(enc_inps)
 			batch_enc_lens.append(np.int32(enc_len))
-			if not for_deploy:
+			if not for_deploy or variants == "score":
 				# Decoder inputs with an extra "GO" symbol and "EOS_ID", then padded.
 				decs += ["_EOS"]
 				decs = decs[0:conf.output_max_len + 1]
@@ -452,11 +452,12 @@ class ModelCore(object):
 			while True:
 				post = raw_input("Post >>")
 				resp = raw_input("Response >>")
-				words, _ = tokenize_word(resp) if use_seg else p.split()
+				words, _ = tokenize_word(resp) if use_seg else (resp.split(), None)
 				resp_str = " ".join(words)
 				print "Score resp: %s" % resp_str
 				batch_records = ["%s\t%s" % (post, resp_str)]
-				feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=False)
+				feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True, variants=variants)
+				print "[feed_dict]", feed_dict
 				out_dict = sess.run(graph_nodes["outputs"], feed_dict)
 				prob = out_dict["logprobs"]
 				print prob

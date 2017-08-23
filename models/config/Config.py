@@ -16,6 +16,7 @@ class Config:
         self.batch_size = 128
         self.embedding_init = ""
         self.use_data_queue = True 
+
         # MODEL HYPERPARAMS
         self.model_kind = ""
         self.input_vocab_size = 0
@@ -35,6 +36,8 @@ class Config:
         self.restore_conf = None 
         self.reverse = False
         self.addmem = False
+        self.dec_init_type = "each2each" # each2each, all2first, allzeros 
+        self.use_init_proj = True # project final enc_states to dec init states 
         self.kld_ratio = 0.000
         self.max_res_num = 70 
         self.visual_data_filename = None
