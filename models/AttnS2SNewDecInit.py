@@ -25,23 +25,34 @@ class AttnS2SNewDecInit(ModelCore):
 	"""
 	def __init__(self, name, job_type="single", task_id=0, dtype=tf.float32):
 		super(self.__class__, self).__init__(name, job_type, task_id, dtype) 
+	
+	def build_inputs(self, for_deploy):
+		graphlg.info("Creating placeholders...")
+		inputs = {
+			"enc_inps:0":tf.placeholder(tf.string, shape=(None, self.conf.input_max_len), name="enc_inps"),
+			"enc_lens:0":tf.placeholder(tf.int32, shape=[None], name="enc_lens")
+		}
+		# inputs for training period 
+		if not for_deploy or self.conf.variants == "score":
+			inputs["dec_inps:0"] = tf.placeholder(tf.string, shape=[None, self.conf.output_max_len + 2], name="dec_inps")
+			inputs["dec_lens:0"] = tf.placeholder(tf.int32, shape=[None], name="dec_lens")
+			if not self.conf.variants == "score":
+				inputs["down_wgts:0"] = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
+		return inputs
 
-	def build(self, for_deploy, variants=""):
+	def build(self, inputs, for_deploy):
 		conf = self.conf
 		name = self.name
 		job_type = self.job_type
 		dtype = self.dtype
-		self.beam_size = 1 if (not for_deploy or variants=="score") else sum(self.conf.beam_splits)
+		self.beam_size = 1 if (not for_deploy or self.conf.variants=="score") else sum(self.conf.beam_splits)
 		conf.keep_prob = conf.keep_prob if not for_deploy else 1.0
 
-		
-		
-		graphlg.info("Creating placeholders...")
-		self.enc_str_inps = tf.placeholder(tf.string, shape=(None, conf.input_max_len), name="enc_inps") 
-		self.enc_lens = tf.placeholder(tf.int32, shape=[None], name="enc_lens") 
-		self.dec_str_inps = tf.placeholder(tf.string, shape=[None, conf.output_max_len + 2], name="dec_inps") 
-		self.dec_lens = tf.placeholder(tf.int32, shape=[None], name="dec_lens") 
-		self.down_wgts = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
+		self.enc_str_inps = inputs["enc_inps:0"]
+		self.dec_str_inps = inputs["dec_inps:0"]
+		self.enc_lens = inputs["enc_lens:0"] 
+		self.dec_lens = inputs["dec_lens:0"]
+		#self.down_wgts = inputs["down_wgts:0"]
 
 		with tf.name_scope("TableLookup"):
 			# lookup tables
@@ -113,7 +124,7 @@ class AttnS2SNewDecInit(ModelCore):
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
 				my_decoder = basic_decoder.BasicDecoder(cell=cell, helper=hp_train, initial_state=dec_init_state, output_layer=output_layer)
 				cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, impute_finished=True, maximum_iterations=conf.output_max_len + 1, scope=scope)
-			elif variants == "score":
+			elif self.conf.variants == "score":
 				hp_train = helper.ScheduledEmbeddingTrainingHelper(inputs=emb_dec_inps, sequence_length=self.dec_lens, embedding=self.embedding, sampling_probability=0.0,
 																   out_proj=(w, b))
 				output_layer = layers_core.Dense(self.conf.out_layer_size, use_bias=True) if self.conf.out_layer_size else None
@@ -167,23 +178,24 @@ class AttnS2SNewDecInit(ModelCore):
 				"debug_outputs":self.outputs
 			}
 
-		elif variants == "score":	
+		elif self.conf.variants == "score":	
 			L = tf.shape(cell_outs.logprobs)[1]
 			one_hot = tf.one_hot(tf.slice(self.dec_inps, [0, 1], [-1, L]), depth=self.conf.output_vocab_size, axis=-1, on_value=1.0, off_value=0.0)
 			outputs = tf.reduce_sum(cell_outs.logprobs * one_hot, 2)
 			outputs = tf.reduce_sum(outputs, axis=1)
-			inputs = { 
-				"enc_inps:0":self.enc_str_inps,
-				"enc_lens:0":self.enc_lens,
-				"dec_inps:0":self.dec_str_inps,
-				"dec_lens:0":self.dec_lens
-			}
+
 			graph_nodes = {
 				"loss":None,
-				"inputs":inputs,
+				"inputs":{ 
+					"enc_inps:0":self.enc_str_inps,
+					"enc_lens:0":self.enc_lens,
+					"dec_inps:0":self.dec_str_inps,
+					"dec_lens:0":self.dec_lens
+				},
 				"outputs":{"logprobs":outputs},
 				"visualize":None
 			}
+
 		else:
 			L = tf.shape(cell_outs.beam_ends)[1]
 			beam_symbols = cell_outs.beam_symbols
@@ -212,22 +224,21 @@ class AttnS2SNewDecInit(ModelCore):
 			self.beam_end_probs = tf.reshape(beam_end_probs, [batch_size, self.beam_size * 2, -1])
 			self.beam_attns = tf.reshape(alignments, [batch_size, self.beam_size, out_len, -1])
 			
-			inputs = { 
-				"enc_inps:0":self.enc_str_inps,
-				"enc_lens:0":self.enc_lens
-			}
-			outputs = {
-				"beam_symbols":self.beam_symbol_strs,
-				"beam_parents":self.beam_parents,
-				"beam_ends":self.beam_ends,
-				"beam_end_parents":self.beam_end_parents,
-				"beam_end_probs":self.beam_end_probs,
-				"beam_attns":self.beam_attns
-			}
+			
 			graph_nodes = {
 				"loss":None,
-				"inputs":inputs,
-				"outputs":outputs,
+				"inputs":{ 
+					"enc_inps:0":self.enc_str_inps,
+					"enc_lens:0":self.enc_lens
+				},
+				"outputs":{
+					"beam_symbols":self.beam_symbol_strs,
+					"beam_parents":self.beam_parents,
+					"beam_ends":self.beam_ends,
+					"beam_end_parents":self.beam_end_parents,
+					"beam_end_probs":self.beam_end_probs,
+					"beam_attns":self.beam_attns
+				},
 				"visualize":{}
 			}		
 		return graph_nodes 
@@ -277,11 +288,13 @@ class AttnS2SNewDecInit(ModelCore):
 		return restorer
 
 	def after_proc(self, out):
-		outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
+		if self.conf.variants == "score":
+			return list(out["logprobs"])
+		else:
+			outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
+			outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]
 
-		outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]
-
-		#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
-		sorted_outs = [sorted(outs[n], key=lambda x:x[1], reverse=True) for n in range(len(outs))]
-		after_proc_out = [[{"outputs":res[0], "probs":res[1]} for res in example] for example in sorted_outs]
-		return after_proc_out 
+			#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
+			sorted_outs = [sorted(outs[n], key=lambda x:x[1], reverse=True) for n in range(len(outs))]
+			after_proc_out = [[{"outputs":res[0], "probs":res[1]} for res in example] for example in sorted_outs]
+			return after_proc_out 

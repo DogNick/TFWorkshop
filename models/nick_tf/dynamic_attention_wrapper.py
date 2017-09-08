@@ -43,6 +43,7 @@ __all__ = [
     "DynamicAttentionWrapper",
     "DynamicAttentionWrapperState",
     "LuongAttention",
+    "LuongAttentionNameScope",
     "BahdanauAttention",
     "hardmax",
 ]
@@ -109,8 +110,15 @@ class _BaseAttentionMechanism(AttentionMechanism):
     2. Preprocessing and storing the memory.
   """
 
-  def __init__(self, query_layer, memory, max_mem_size, memory_sequence_length=None,
-               memory_layer=None, check_inner_dims_defined=True, name=None):
+  def __init__(self,
+               query_layer,
+               memory,
+               max_mem_size,
+               memory_sequence_length=None,
+               memory_layer=None,
+               check_inner_dims_defined=True,
+               name=None):
+
     """Construct base AttentionMechanism class.
 
     Args:
@@ -119,6 +127,9 @@ class _BaseAttentionMechanism(AttentionMechanism):
         provided, the shape of `query` must match that of `memory_layer`.
       memory: The memory to query; usually the output of an RNN encoder.  This
         tensor should be shaped `[batch_size, max_time, ...]`.
+
+
+
       memory_sequence_length (optional): Sequence lengths for the batch entries
         in memory.  If provided, the memory tensor rows are masked with zeros
         for values past the respective sequence lengths.
@@ -167,6 +178,148 @@ class _BaseAttentionMechanism(AttentionMechanism):
   def keys(self):
     return self._keys
 
+class LuongAttentionNameScope(_BaseAttentionMechanism):
+  """Implements Luong-style (multiplicative) attention scoring.
+
+  This attention has two forms.  The first is standard Luong attention,
+  as described in:
+
+  Minh-Thang Luong, Hieu Pham, Christopher D. Manning.
+  "Effective Approaches to Attention-based Neural Machine Translation."
+  EMNLP 2015.  https://arxiv.org/abs/1508.04025
+
+  The second is the normalized form.  This form is inspired by the
+  normalization proposed for Bahdanau attention in
+
+  Colin Raffel, Thang Luong, Peter J. Liu, Ron J. Weiss, and Douglas Eck.
+  "Online and Linear-Time Attention by Enforcing Monotonic Alignments."
+  (Eq. 15).
+
+  To enable the second form, construct the object with parameter
+  `normalize=True`.
+  """
+
+  def __init__(self, num_units, memory, max_mem_size, memory_sequence_length=None,
+               normalize=False, attention_r_initializer=None, z=None, scope=None,
+               name="LuongAttentionNameScope"):
+    """Construct the AttentionMechanism mechanism.
+
+    Args:
+      num_units: The depth of the attention mechanism.
+      memory: The memory to query; usually the output of an RNN encoder.  This
+        tensor should be shaped `[batch_size, max_time, ...]`.
+      memory_sequence_length (optional): Sequence lengths for the batch entries
+        in memory.  If provided, the memory tensor rows are masked with zeros
+        for values past the respective sequence lengths.
+      normalize: Python boolean.  Whether to normalize the energy term.
+      attention_r_initializer:  Initial value of the post-normalization bias
+        when normalizing.  Default is `0`.
+      name: Name to use when creating ops.
+    """
+    # For LuongAttention, we only transform the memory layer; thus
+    # num_units **must** match expected the query depth.
+    super(LuongAttentionNameScope, self).__init__(
+        query_layer=None,
+        memory_layer=layers_core.Dense(num_units, name="memory_layer"),
+        memory=memory,
+        max_mem_size=max_mem_size,
+        memory_sequence_length=memory_sequence_length,
+        name=name)
+    self._num_units = num_units
+    self._normalize = normalize
+    self._name = name
+    self._scope = scope
+    self._z = z
+    if normalize and attention_r_initializer is None:
+      attention_r_initializer = 0
+    if normalize:
+      with ops.name_scope(name, "LuongAttention",
+                          [memory, attention_r_initializer]):
+        attention_r_initializer = ops.convert_to_tensor(
+            attention_r_initializer, dtype=self.values.dtype,
+            name="attention_r_initializer")
+    self._attention_r_initializer = attention_r_initializer
+
+  def __call__(self, query, newmem=None):
+    """Score the query based on the keys and values.
+
+    Args:
+      query: Tensor of dtype matching `self.values` and shape
+        `[batch_size, query_depth]`.
+
+    Returns:
+      score: Tensor of dtype matching `self.values` and shape
+        `[batch_size, max_time]` (`max_time` is memory's `max_time`).
+
+    Raises:
+      ValueError: If `key` and `query` depths do not match.
+    """
+    depth = int(query.get_shape()[-1])
+    key_units = int(self.keys.get_shape()[-1])
+    if depth != key_units:
+      raise ValueError(
+          "Incompatible or unknown inner dimensions between query and keys.  "
+          "Query (%s) has units: %s.  Keys (%s) have units: %s.  "
+          "Perhaps you need to set num_units to the the keys' dimension (%s)?"
+          % (query, depth, self.keys, key_units, key_units))
+    dtype = query.dtype
+
+    #with ops.name_scope(name, "LuongAttentionCall") as scope:
+    with tf.variable_scope(self._name, "LuongAttentionNameScopeCall") as scope:
+    #with tf.variable_scope(self._scope):
+      # Reshape from [batch_size, depth] to [batch_size, 1, depth]
+      # for matmul.
+
+      # Inner product along the query units dimension.
+      # matmul shapes: query is [batch_size, 1, depth] and
+      #                keys is [batch_size, max_time, depth].
+      # the inner product is asked to **transpose keys' inner shape** to get a
+      # batched matmul on:
+      #   [batch_size, 1, depth] . [batch_size, depth, max_time]
+      # resulting in an output shape of:
+      #   [batch_time, 1, max_time].
+      # we then squeee out the center singleton dimension.
+      #query = tf.Print(query, [query[0]], message="luo query", summarize=20)
+      if newmem is not None:
+          keys = tf.concat([self._keys, newmem], 1)
+      else:
+          keys = self._keys
+
+      #keys = tf.Print(keys, [tf.shape(keys)], message="keys")
+      if self._z != None:
+          l = tf.shape(keys)[1]
+          latent_size = int(self._z.get_shape()[1])
+
+          # proj q and z to keys state size
+          #q_w = variable_scope.get_variable("q_w", shape=[depth + int(self._z.get_shape()[-1]), depth], dtype=dtype)
+          #query_z = tf.expand_dims(tf.matmul(tf.concat([query, self._z], 1), q_w), 1)
+          #score = math_ops.matmul(query_z, keys, transpose_b=True)
+
+          # proj keys to q_z size
+          #with tf.variable_scope(scope):
+          keys_kernel = variable_scope.get_variable("keys_kernel", shape=[1, 1, depth, depth + int(self._z.get_shape()[-1])], dtype=dtype)
+          keys_for_score = tf.nn.conv2d(tf.expand_dims(keys, 1), keys_kernel, [1,1,1,1], "SAME", name="score")
+          keys_for_score = tf.squeeze(keys_for_score)
+          query_z = tf.expand_dims(tf.concat([query, self._z], 1), 1)
+          score = math_ops.matmul(query_z, keys_for_score, transpose_b=True)
+      else:
+          query = array_ops.expand_dims(query, 1)
+          score = math_ops.matmul(query, keys, transpose_b=True)
+      score = array_ops.squeeze(score, [1])
+
+      if self._normalize:
+        # Scalar used in weight normalization
+        g = variable_scope.get_variable(
+            "attention_g", dtype=dtype,
+            initializer=math.sqrt((1. / self._num_units)))
+        # Scalar bias added to attention scores
+        r = variable_scope.get_variable(
+            "attention_r", dtype=dtype,
+            initializer=self._attention_r_initializer)
+        score = g * score + r
+    #score = tf.Print(score, [score[0]], message="luo score", summarize=1000)
+
+    return score
 
 class LuongAttention(_BaseAttentionMechanism):
   """Implements Luong-style (multiplicative) attention scoring.
@@ -277,9 +430,18 @@ class LuongAttention(_BaseAttentionMechanism):
       if self._z != None:
           l = tf.shape(keys)[1]
           latent_size = int(self._z.get_shape()[1])
-          q_w = variable_scope.get_variable("q_w", shape=[depth + int(self._z.get_shape()[-1]), depth], dtype=dtype)
-          query_z = tf.expand_dims(tf.matmul(tf.concat([query, self._z], 1), q_w), 1)
-          score = math_ops.matmul(query_z, keys, transpose_b=True)
+
+          # proj q and z to keys state size
+          #q_w = variable_scope.get_variable("q_w", shape=[depth + int(self._z.get_shape()[-1]), depth], dtype=dtype)
+          #query_z = tf.expand_dims(tf.matmul(tf.concat([query, self._z], 1), q_w), 1)
+          #score = math_ops.matmul(query_z, keys, transpose_b=True)
+
+          # proj keys to q_z size
+          keys_kernel = variable_scope.get_variable("keys_kernel", shape=[1, 1, depth, depth + int(self._z.get_shape()[-1])], dtype=dtype)
+          keys_for_score = tf.nn.conv2d(tf.expand_dims(keys, 1), keys_kernel, [1,1,1,1], "SAME")
+          keys_for_score = tf.squeeze(keys_for_score)
+          query_z = tf.expand_dims(tf.concat([query, self._z], 1), 1)
+          score = math_ops.matmul(query_z, keys_for_score, transpose_b=True)
       else:
           query = array_ops.expand_dims(query, 1)
           score = math_ops.matmul(query, keys, transpose_b=True)
@@ -321,7 +483,7 @@ class BahdanauAttention(_BaseAttentionMechanism):
   """
 
   def __init__(self, num_units, memory, max_mem_size, memory_sequence_length=None,
-               normalize=False, attention_r_initializer=None,
+               normalize=False, attention_r_initializer=None, z=None,
                name="BahdanauAttention"):
     """Construct the Attention mechanism.
 
@@ -504,6 +666,7 @@ class DynamicAttentionWrapper(rnn_cell_impl.RNNCell):
     self._probability_fn = probability_fn
     self._output_attention = output_attention
     self._addmem = addmem
+    self._name = name
 
 
   @property
@@ -522,19 +685,12 @@ class DynamicAttentionWrapper(rnn_cell_impl.RNNCell):
   def state_size(self):
     return DynamicAttentionWrapperState(
                 cell_state=self._cell.state_size,
+
                 attention=self._attention_size,
                 alignments=self._attention_mechanism._max_mem_size,
                 newmem=self._attention_size)
 
   def zero_state(self, batch_size, dtype):
-    def _shape(batch_size, from_shape):
-      if not isinstance(from_shape, tensor_shape.TensorShape):
-        return tensor_shape.TensorShape(None)
-      else:
-        batch_size = tensor_util.constant_value(
-            ops.convert_to_tensor(
-                batch_size, name="batch_size"))
-        return tensor_shape.TensorShape([batch_size]).concatenate(from_shape)
     with ops.name_scope(type(self).__name__ + "ZeroState", values=[batch_size]):
       zero_newmem = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True, clear_after_read=False)
       zero_newmem = zero_newmem.write(0, tf.zeros([batch_size, self._attention_size]))
@@ -560,6 +716,7 @@ class DynamicAttentionWrapper(rnn_cell_impl.RNNCell):
     - Step 6: Calculate the attention output by concatenating the cell output
       and context through the attention layer.
 
+
     Args:
       inputs: (Possibly nested tuple of) Tensor, the input at this time step.
       state: An instance of `DynamicAttentionWrapperState` containing
@@ -572,9 +729,7 @@ class DynamicAttentionWrapper(rnn_cell_impl.RNNCell):
       - `attention` is the attention passed to the layer above.
       - `next_state` is an instance of `DynamicAttentionWrapperState`
          containing the state calculated at this time step.
-
     Raises:
-      NotImplementedError: if `scope` is not `None`.
     """
     if scope is not None:
       raise NotImplementedError("scope not None is not supported")
@@ -584,8 +739,9 @@ class DynamicAttentionWrapper(rnn_cell_impl.RNNCell):
     cell_inputs = self._cell_input_fn(inputs, state.attention)
     cell_state = state.cell_state
 
-    cell_output, next_cell_state = self._cell(cell_inputs, cell_state)
-    
+
+    cell_output, next_cell_state = self._cell(cell_inputs, cell_state, self._name)
+
     #cell_output = tf.Print(cell_output, [tf.shape(cell_output)], message="cell_output") 
     # Nick use cell_state to query attention
     if isinstance(next_cell_state[0], LSTMStateTuple):
@@ -613,6 +769,7 @@ class DynamicAttentionWrapper(rnn_cell_impl.RNNCell):
     #   [batch_size, 1, attention_mechanism.num_units].
     # we then squeeze out the singleton dim.
 
+
     if self._addmem:
         context = math_ops.matmul(alignments, tf.concat([self._attention_mechanism.values, tf.transpose(state.newmem.stack(), [1, 0, 2])], 1))
     else:
@@ -638,10 +795,10 @@ class DynamicAttentionWrapper(rnn_cell_impl.RNNCell):
      
 
     next_state = DynamicAttentionWrapperState(
-            cell_state=next_cell_state,
-            attention=attention,
-            alignments=alignments,
-            newmem=newmem)
 
+           cell_state=next_cell_state,
+           attention=attention,
+           alignments=alignments,
+           newmem=newmem)
 
     return cell_output, next_state

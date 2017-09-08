@@ -30,9 +30,8 @@ sys.path.insert(0, "..")
 from models import SERVER_SCHEDULES 
 from models import confs
 from models import util
-from models import magic
+from models import create 
 
-schedule = SERVER_SCHEDULES[options.service][options.schedule]
 
 from models.Nick_plan import * 
 from models.Tsinghua_plan import * 
@@ -59,14 +58,15 @@ def fwrap(gf, ioloop=None):
 	gf.add_done_callback(lambda _: ioloop.add_callback(_fwrap, f, gf))
 	return f
 
+schedule = SERVER_SCHEDULES[options.service][options.schedule]
 class ModelHandler(tornado.web.RequestHandler):
 	__metaclass__ = abc.ABCMeta
 	serverlg.info('[ModelServer] [Initialization: service %s, schedule %d] [%s]' % 
 					(options.service, options.schedule, time.strftime('%Y-%m-%d %H:%M:%S')))
 	for conf_name in schedule:
 		#may be deprecated
-		conf = confs[conf_name]
-		graph = magic[conf.model_kind](conf_name, True)
+		graph = create(conf_name)
+		graph.apply_deploy_conf(schedule[conf_name])
 
 		host, port = schedule[conf_name]["tf_server"].split(":")
 		channel = implementations.insecure_channel(host, int(port))
@@ -86,7 +86,6 @@ class ModelHandler(tornado.web.RequestHandler):
 		debug_infos = []
 		 
 		graph_stubs = [schedule[name]["graph_stub"] for name in schedule]
-		model_names = [name for name in schedule]
 		# Multi model compatible, but here just one model exists
 		multi_models = []
 		for graph, stub in graph_stubs:
@@ -107,15 +106,17 @@ class ModelHandler(tornado.web.RequestHandler):
 	def run_model(self, graph, stub, records, use_seg=True):
 		# Use model specific preprocess
 		feed_data = graph.preproc(records, use_seg=use_seg, for_deploy=True)
-
 		# make request 
 		request = predict_pb2.PredictRequest()
 		request.model_spec.name = graph.name 
+		values = feed_data.values()	
+		N = len(values[0]) if len(values[0]) < 4 else 4
+		see_feed = {k:v[0:N] for k, v in feed_data.items()}
+		serverlg.info('[DispatcherServer] [sample %d/%d] %s' % (N, len(values), str(see_feed)))
 		for key, value in feed_data.items():
 			v = np.array(value) 
 			value_tensor = tensor_util.make_tensor_proto(value, shape=v.shape)
 			# For compatibility to the old placeholder key 
-			#key = re.sub(":0", "", key)
 			request.inputs[key].CopyFrom(value_tensor)
 
 		# query the model 
@@ -124,8 +125,8 @@ class ModelHandler(tornado.web.RequestHandler):
 		out = {}
 		for key, value in result.outputs.items():
 			out[key] = tensor_util.MakeNdarray(value) 
-
 		model_results = graph.after_proc(out)
+
 		raise gen.Return(model_results)
 		
 	@tornado.web.asynchronous
@@ -142,8 +143,8 @@ class ModelHandler(tornado.web.RequestHandler):
 		
 		# query all models 
 		#for name in self.servings:
-		model_results = yield self.handle()
-		results = self.form_multi_results(model_results)
+		model_results, debug_infos, desc = yield self.handle()
+		results = self.form_multi_results(model_results, debug_infos)
 
 		# wait until told to proceed
 		#yield self.evt.wait()
@@ -151,8 +152,9 @@ class ModelHandler(tornado.web.RequestHandler):
 		#self.run()
 
 		# form response
-		ret = {"status":"ok","result":self.model_results}
-		self.write(json.dumps(ret, ensure_ascii=False))
+		ret = {"status":"ok","result":results}
+		#self.write(json.dumps(ret))
+		self.write(ret)
 		#self.finish()
 
 	@tornado.web.asynchronous

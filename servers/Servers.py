@@ -47,6 +47,7 @@ from DeepMatchHandler import *
 from GenerateHandler import *
 from PoemHandler import *
 from IntentHandler import * 
+from ScoreHandler import * 
 
 
 def main():
@@ -77,7 +78,8 @@ def main():
 	for key in submodel_infos:
 		env = os.environ.copy()
 		runtime_name, host, port, gpu = model_infos[key] 
-		env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+		print gpu
+		#env["CUDA_VISIBLE_DEVICES"] = str(gpu)
 		command = "./tensorflow_model_server --enable_batching=true" \
 				  " --port=%d" \
 				  " --model_name=%s" \
@@ -85,7 +87,7 @@ def main():
 				  " --num_batch_threads=%d" \
 				  " --batch_timeout_micros=%d" \
 				  " --max_enqueued_batches=%d" \
-				  " --max_batch_size=%d &" % (
+				  " --max_batch_size=%d" % (
 					  int(port), 
 					  runtime_name, 
 					  DEPLOY_ROOT, runtime_name, 
@@ -114,7 +116,9 @@ def main():
 			"generate": GenerateHandler,
 			"matchpoem": MatchPoemHandler,
 			"judgepoem": JudgePoemHandler,
-			"intent": IntentHandler
+			"intent": IntentHandler,
+			"chaten": ChatENHandler, 
+			"scorer": ScoreHandler 
 	}
 
 	# start front servers 

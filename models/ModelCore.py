@@ -28,11 +28,11 @@ from tensorflow.contrib.layers.python.layers.embedding_ops import embedding_look
 from tensorflow.contrib.tensorboard.plugins import projector
 
 from nick_tf import score_decoder 
-from nick_tf import helper
-from nick_tf import basic_decoder
-from nick_tf import decoder
+from nick_tf import helper, helper1_2
+from nick_tf import basic_decoder, basic_decoder1_2
+from nick_tf import decoder, decoder1_2
 from nick_tf import beam_decoder
-from nick_tf import dynamic_attention_wrapper
+from nick_tf import dynamic_attention_wrapper, attention_wrapper1_2
 from nick_tf.cocob_optimizer import COCOB 
 
 import hook 
@@ -75,8 +75,17 @@ class ModelCore(object):
 		self.run_options = None #tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 		self.run_metadata = None #tf.RunMetadata()
 
+	def apply_deploy_conf(self, deploy_conf):
+		self.conf.variants = deploy_conf.get("variants", self.conf.variants)
+		self.conf.output_max_len = deploy_conf.get("max_out", self.conf.output_max_len)
+		self.conf.input_max_len = deploy_conf.get("max_in", self.conf.input_max_len)
+		self.conf.max_res_num = deploy_conf.get("max_res", self.conf.max_res_num)
+		self.conf.beam_splits = deploy_conf.get("beam_splits", self.conf.beam_splits)
+		self.conf.stddev = deploy_conf.get("stddev", self.conf.stddev)
+		self.conf.restore_from = deploy_conf.get("rf", self.conf.restore_from)
+
 	@abc.abstractmethod 
-	def build(self, for_deploy, variants=""):
+	def build(self, for_deploy):
 		"""build graph in deploy/train way
 
 		build a graph with two seperate graph branches for both training and inference,
@@ -123,7 +132,7 @@ class ModelCore(object):
 		return
 	
 	@abc.abstractmethod
-	def export(self, sess, nodes, version, deploy_dir="deployments", ckpt_steps=None, variants=""):
+	def export(self, sess, nodes, version, deploy_dir="deployments"):
 
 		# global steps as version
 		export_dir = os.path.join(os.path.join(deploy_dir, self.name), str(version))
@@ -160,9 +169,13 @@ class ModelCore(object):
 		for i, each in enumerate(after_proc):
 			if isinstance(each, list):
 				for res in each:
-					print "[%d]" % i, res
+					final = " ".join(res["outputs"])
+					res["outputs"] = ""
+					print "[%d]" % i, final, res
 			else:				
-				print "[%d]" % i, each
+				final = " ".join(each["outputs"])
+				each["outputs"] = ""	
+				print "[%d]" % i, final, each
 
 	def fetch_data(self, use_random=False, begin=0, size=128, dev=False, sess=None):
 		""" General Fetch data process
@@ -188,22 +201,24 @@ class ModelCore(object):
 				examples = records[begin:begin+size]
 		return examples
 
-	def build_all(self, for_deploy, variants="", device="/cpu:0"):
+	def build_all(self, for_deploy, device="/cpu:0"):
+		graphlg.info("Building main graph...")	
 		with tf.device(device):
 			#with variable_scope.variable_scope(self.model_kind, dtype=tf.float32) as scope: 
-			graphlg.info("Building main graph...")	
-			graph_nodes = self.build(for_deploy, variants=variants)
+			inputs = self.build_inputs(for_deploy)
+			graph_nodes = self.build(inputs, for_deploy)
+
 			graphlg.info("Collecting trainable params...")
 			self.trainable_params.extend(tf.trainable_variables())
 			if not for_deploy:	
 				graphlg.info("Creating backpropagation graph and optimizers...")
 				graph_nodes["update"] = self.backprop(graph_nodes["loss"])
 				graph_nodes["summary"] = tf.summary.merge_all()
-				self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
 			if "visualize" not in graph_nodes:
 				graph_nodes["visualize"] = None
 			graphlg.info("Graph done")
 			graphlg.info("")
+		self.saver = tf.train.Saver(max_to_keep=self.conf.max_to_keep)
 
 		# More log info about device placement and params memory
 		devices = {}
@@ -276,26 +291,24 @@ class ModelCore(object):
 			tf.add_to_collection(tf.GraphKeys.GLOBAL_STEP, self.global_step)
 		return update
 
-	def preproc(self, records, for_deploy=False, use_seg=False, default_wgt=1.0, variants=""):
+	def preproc(self, records, for_deploy=False, use_seg=False, default_wgt=1.0):
 		# parsing
 		data = []
 		for each in records:
-			if not for_deploy or variants == "score":
+			if not for_deploy or self.conf.variants == "score":
 				segs = re.split("\t", each.strip())
 				if len(segs) < 2:
 					continue
 				p, r = segs[0], segs[1]
-				p_list = re.split(" +", p)
-				r_list = re.split(" +", r)
-
-				down_wgts = segs[-1] if len(segs) > 2 else default_wgt 
+				p_list, r_list = re.split(" +", p), re.split(" +", r)
 				if self.conf.reverse:
 					p_list, r_list = r_list, p_list
+
+				down_wgts = segs[-1] if len(segs) > 2 else default_wgt 
 				data.append([p_list, len(p_list) + 1, r_list, len(r_list) + 1, down_wgts])
 			else:
 				p = each.strip()
-				words, _ = tokenize_word(p) if use_seg else (re.split(" +", p), None)
-				p_list = words
+				p_list, _ = tokenize_word(p) if use_seg else (re.split(" +", p), None)
 				data.append([p_list, len(p_list) + 1, [], 1, 1.0])
 
 		# batching
@@ -311,7 +324,7 @@ class ModelCore(object):
 
 			batch_enc_inps.append(enc_inps)
 			batch_enc_lens.append(np.int32(enc_len))
-			if not for_deploy or variants == "score":
+			if not for_deploy or self.conf.variants == "score":
 				# Decoder inputs with an extra "GO" symbol and "EOS_ID", then padded.
 				decs += ["_EOS"]
 				decs = decs[0:conf.output_max_len + 1]
@@ -321,7 +334,9 @@ class ModelCore(object):
 				# Merge dec inps and targets 
 				batch_dec_inps.append(["_GO"] + decs + ["_PAD"] * (conf.output_max_len + 1 - len(decs)))
 				batch_dec_lens.append(np.int32(dec_len))
-				batch_down_wgts.append(down_wgts)
+				if not self.conf.variants == "score":
+					batch_down_wgts.append(down_wgts)
+
 		self.curr_input_feed = feed_dict = {
 			"enc_inps:0": batch_enc_inps,
 			"enc_lens:0": batch_enc_lens,
@@ -438,8 +453,8 @@ class ModelCore(object):
 			print "TIME: %.4f, LOSS: %.10f" % (t, out["loss"])
 			print ""
 
-	def test(self, sess, graph_nodes, use_seg=True, variants=""):
-		if variants == "":
+	def test(self, sess, graph_nodes, use_seg=True):
+		if self.conf.variants == "":
 			while True:
 				query = raw_input(">>")
 				batch_records = [query]
@@ -448,7 +463,7 @@ class ModelCore(object):
 				out_dict = sess.run(graph_nodes["outputs"], feed_dict) 
 				out = self.after_proc(out_dict)
 				self.print_after_proc(out)
-		elif variants == "score":
+		elif self.conf.variants == "score":
 			while True:
 				post = raw_input("Post >>")
 				resp = raw_input("Response >>")
@@ -456,7 +471,7 @@ class ModelCore(object):
 				resp_str = " ".join(words)
 				print "Score resp: %s" % resp_str
 				batch_records = ["%s\t%s" % (post, resp_str)]
-				feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True, variants=variants)
+				feed_dict = self.preproc(batch_records, use_seg=use_seg, for_deploy=True)
 				print "[feed_dict]", feed_dict
 				out_dict = sess.run(graph_nodes["outputs"], feed_dict)
 				prob = out_dict["logprobs"]

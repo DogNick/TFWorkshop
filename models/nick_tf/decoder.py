@@ -12,15 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Seq2seq layer operations for use in neural networks.
-"""
+"""Seq2seq layer operations for use in neural networks."""
 
-#from __future__ import absolute_import
+from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import abc
-
 import six
 
 import tensorflow as tf
@@ -32,6 +30,7 @@ from tensorflow.python.framework import tensor_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
+
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
@@ -266,16 +265,10 @@ def dynamic_decode(decoder,
             next_shape = [None, None] + list(cur.shape[2:])
 
           #Nick
-          print (next_shape)
           cur.set_shape(next_shape)
           new.set_shape(next_shape)
           pass_through = (new.shape.ndims == 0)
-          #cur = tf.Print(cur, [tf.shape(cur)], message="currrrrrrrrrrrrrrrrrrrrrrr "+ cur.name)
-          #new = tf.Print(new, [tf.shape(new)], message="newwwwwwwwwwwwwwwwwwwwwwww "+ new.name)
         return new if pass_through else array_ops.where(finished, cur, new)
-
-      #decoder_state = nest.map_structure(lambda x: tf.Print(x, [tf.shape(x)], message=str(x)+"_new"), decoder_state)
-      #state = nest.map_structure(lambda x: tf.Print(x, [tf.shape(x)], message=str(x)+"_old"), state)
 
       if impute_finished:
         next_state = nest.map_structure(
@@ -291,10 +284,7 @@ def dynamic_decode(decoder,
         condition,
         body,
         loop_vars=[
-            initial_time,
-            initial_outputs_ta,
-            initial_state,
-            initial_inputs,
+            initial_time, initial_outputs_ta, initial_state, initial_inputs,
             initial_finished
         ],
         shape_invariants=[

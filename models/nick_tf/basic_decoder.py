@@ -21,19 +21,19 @@ from __future__ import print_function
 
 import collections
 import tensorflow as tf
-from tensorflow.python.ops import rnn_cell_impl
 #from tensorflow.contrib.seq2seq.python.ops import decoder
 #from tensorflow.contrib.seq2seq.python.ops import helper as helper_py
 import decoder
 import helper as helper_py
+import dynamic_attention_wrapper
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.layers import base as layers_base
+from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.util import nest
 from tensorflow.python.framework import constant_op
 from tensorflow.python.ops import array_ops
-import dynamic_attention_wrapper
 
 DynamicAttentionWrapper = dynamic_attention_wrapper.DynamicAttentionWrapper
 
@@ -118,7 +118,6 @@ class BasicDecoder(decoder.Decoder):
         return self._cell.state_shape
       else:
         return nest.map_structure(lambda s: tf.TensorShape([None, s]), self._cell.state_size)
-
 
   def _rnn_output_size(self):
     size = self._cell.output_size

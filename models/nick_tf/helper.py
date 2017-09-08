@@ -136,7 +136,7 @@ class TrainingHelper(Helper):
   Returned sample_ids are the argmax of the RNN output logits.
   """
 
-  def __init__(self, inputs, sequence_length, time_major=False, name=None, input_ids=None):
+  def __init__(self, inputs, sequence_length, time_major=False, name=None):
     """Initializer.
 
     Args:
@@ -234,9 +234,8 @@ class ScheduledEmbeddingTrainingHelper(TrainingHelper):
       if callable(embedding):
         self._embedding_fn = embedding
       else:
-		with ops.device("/cpu:0"):
-			self._embedding_fn = (
-				lambda ids: embedding_ops.embedding_lookup(embedding, ids))
+        self._embedding_fn = (
+            lambda ids: embedding_ops.embedding_lookup(embedding, ids))
       self._sampling_probability = ops.convert_to_tensor(
           sampling_probability, name="sampling_probability")
       if self._sampling_probability.get_shape().ndims not in (0, 1):
@@ -295,7 +294,8 @@ class ScheduledEmbeddingTrainingHelper(TrainingHelper):
         sample_ids_sampling = array_ops.gather(sample_ids, where_sampling_flat)
         inputs_not_sampling = array_ops.gather(
             base_next_inputs, where_not_sampling_flat)
-        sampled_next_inputs = self._embedding_fn(sample_ids_sampling)
+        with tf.device("/cpu:0"):
+          sampled_next_inputs = self._embedding_fn(sample_ids_sampling)
         base_shape = array_ops.shape(base_next_inputs)
         return (array_ops.scatter_nd(indices=where_sampling,
                                      updates=sampled_next_inputs,
@@ -308,9 +308,6 @@ class ScheduledEmbeddingTrainingHelper(TrainingHelper):
       next_inputs = control_flow_ops.cond(
           all_finished, lambda: base_next_inputs, maybe_sample)
       return (finished, next_inputs, state)
-
-
-
 
 
 class ScheduledOutputTrainingHelper(TrainingHelper):
@@ -474,9 +471,8 @@ class GreedyEmbeddingHelper(Helper):
     if callable(embedding):
       self._embedding_fn = embedding
     else:
-      with ops.device("/cpu:0"):
-        self._embedding_fn = (
-              lambda ids: embedding_ops.embedding_lookup(embedding, ids))
+      self._embedding_fn = (
+          lambda ids: embedding_ops.embedding_lookup(embedding, ids))
 
     self._start_tokens = ops.convert_to_tensor(
         start_tokens, dtype=dtypes.int32, name="start_tokens")
@@ -487,7 +483,8 @@ class GreedyEmbeddingHelper(Helper):
     self._batch_size = array_ops.size(start_tokens)
     if self._end_token.get_shape().ndims != 0:
       raise ValueError("end_token must be a scalar")
-    self._start_inputs = self._embedding_fn(self._start_tokens)
+    with tf.device("/cpu:0"):
+      self._start_inputs = self._embedding_fn(self._start_tokens)
 
   @property
   def batch_size(self):

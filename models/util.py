@@ -107,6 +107,20 @@ def tokenize_word(sentence, need_pos=False):
             pos.append(t[1])
     return res, pos 
 
+def clean_en(sentence, need_pos=False, joint_prime=False, lower=True):
+	sentence = re.sub(" +", " ", sentence)
+	if joint_prime:
+		sentence = re.sub(" ' ", "'", sentence) 
+	else:
+		sentence = re.sub("[^ \t](')[^ \t]", " \\1 ", sentence) 
+
+	sentence = re.sub("([\"?.!,;:])", " \\1 ", sentence)
+	sentence = re.sub(" +", " ", sentence)
+
+	if lower:
+		sentence = sentence.lower()
+	
+	return sentence
 
 
 def filter_no_use(out, DISCARD):

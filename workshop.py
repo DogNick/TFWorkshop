@@ -92,32 +92,34 @@ def main(_):
 			if conf_name not in confs:
 				print("\nNo model conf '%s' found !!!! Skipped\n" % conf_name)
 				exit(0)
+
 			if schedule[conf_name].get("export", True) == False:
 				continue
 
 			model = create(conf_name, job_type="single", task_id=0)
-			# adjust config for deploy goal
-			conf = model.conf
-			model.conf.output_max_len = schedule[conf_name].get("max_out", conf.output_max_len)
-			model.conf.input_max_len = schedule[conf_name].get("max_in", conf.input_max_len)
-			model.conf.max_res_num = schedule[conf_name].get("max_res", conf.max_res_num)
-			model.conf.beam_splits = schedule[conf_name].get("beam_splits", conf.beam_splits)
-			model.conf.stddev = schedule[conf_name].get("stddev", conf.stddev)
-			model.conf.keep_prob = 1.0
+			model.apply_deploy_conf(schedule[conf_name])	
 
-			sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
+			ckpt_steps = schedule[conf_name].get("ckpt_steps", None) 
+			gpu = schedule[conf_name].get("deploy_gpu", 0)
+			sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=gpu, ckpt_steps=ckpt_steps)
+
 			# do it
 			model.export(sess=sess, nodes=graph_nodes, version=ckpt_steps, deploy_dir="servers/deployments")
 			tf.reset_default_graph()
+
 	# Train (distributed or single)
 	elif FLAGS.cmd == "dummytrain": 
 		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 		sess, graph_nodes = init_dummy_train(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu)
 		model.dummy_train(sess, graph_nodes)
+
 	elif FLAGS.cmd == "test":
 		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
-		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, variants=FLAGS.variants, gpu=FLAGS.gpu, ckpt_steps=FLAGS.ckpt_steps)
-		model.test(sess, graph_nodes, use_seg=FLAGS.use_seg, variants=FLAGS.variants)
+		model.conf.variants = FLAGS.variants
+
+		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=FLAGS.gpu, ckpt_steps=FLAGS.ckpt_steps)
+		model.test(sess, graph_nodes, use_seg=FLAGS.use_seg)
+
 	elif FLAGS.cmd == "train":
 		model = create(FLAGS.conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 		if model.conf.cluster and FLAGS.job_type == "worker" or FLAGS.job_type == "single":

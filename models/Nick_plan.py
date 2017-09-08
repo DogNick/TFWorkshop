@@ -19,7 +19,7 @@ def lp(length, alpha):
     #return pow(5 + length / 6, alpha)
 
     #lp_ratio = pow((0.1 + length) / 4.1, alpha)
-    lp_ratio = pow((1 + length) / 6.0, alpha)
+    lp_ratio = pow((1 + length) / 8.0, alpha)
     return lp_ratio 
 
 def cp(attn_scores, beta):
@@ -137,9 +137,10 @@ def score_couplet(model_name, poem_sen, match_sens, probs):
     # for tone match
     return match_sen_cans, prob_cans 
 
-def score_with_prob_attn(model_name, ans, probs, attns, alpha=0.9, beta=0.1, is_ch=True, average_across_len=False):
-    res = []
+def score_with_prob_attn(ans, probs, attns, posteriors=None, lbda=None, alpha=0.9, beta=0.1, is_ch=True, average_across_len=False):
+    results = []
     for n in range(len(ans)):
+        infos = {}
         words = []
         dup = {}
         dupcount = 0
@@ -248,7 +249,23 @@ def score_with_prob_attn(model_name, ans, probs, attns, alpha=0.9, beta=0.1, is_
             gnmt_score = -1000
             info = "NE %s detected !" % NE
         else: 
-            gnmt_score = probs[n] / float(len(words)) if average_across_len else probs[n]
-            #gnmt_score = probs[n] / lp_ratio + cp_score
-        res.append((model_name, final, info, gnmt_score, probs[n], lp_ratio, cp_score, enc_attn_scores, seged))
-    return res
+            if posteriors:
+                lbda = 0.5 if not lbda else lbda
+                gnmt_score = probs[n] * lbda + posteriors[n] * (1 - lbda)
+            else:
+                gnmt_score = probs[n]
+
+            if average_across_len:
+                gnmt_score = gnmt_score / float(len(words))
+                infos["average_len"] = len(words) 
+            else:
+                gnmt_score = float(gnmt_score) / lp_ratio + cp_score
+                infos["lp"] = lp_ratio
+                infos["cp"] = cp_score
+        infos["prob"] = round(float(probs[n]), 4)
+        infos["posterior"] = round(float(posteriors[n]), 4)
+        infos["score"] = round(gnmt_score, 4)
+        infos["info"] = info
+        results.append((final, infos))
+
+    return results

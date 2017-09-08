@@ -105,7 +105,20 @@ class CVAERNN(ModelCore):
 		self.embedding = None
 		self.out_proj = None
 
-	def build(self, for_deploy, variants=""):
+	def build_inputs(self, for_deploy):
+		inputs = {}
+		graphlg.info("Creating placeholders...")
+		inputs = {
+			"enc_inps:0":tf.placeholder(tf.string, shape=(None, self.conf.input_max_len), name="enc_inps"),
+			"enc_lens:0":tf.placeholder(tf.int32, shape=[None], name="enc_lens")
+		}
+		# inputs for training period 
+		inputs["dec_inps:0"] = tf.placeholder(tf.string, shape=[None, self.conf.output_max_len + 2], name="dec_inps")
+		inputs["dec_lens:0"] = tf.placeholder(tf.int32, shape=[None], name="dec_lens")
+		inputs["down_wgts:0"] = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
+		return inputs
+
+	def build(self, inputs, for_deploy):
 		scope = ""
 		conf = self.conf
 		name = self.name
@@ -114,13 +127,11 @@ class CVAERNN(ModelCore):
 		self.beam_splits = conf.beam_splits
 		self.beam_size = 1 if not for_deploy else sum(self.beam_splits)
 
-		graphlg.info("Creating placeholders...")
-		self.enc_str_inps = tf.placeholder(tf.string, shape=(None, conf.input_max_len), name="enc_inps") 
-		self.enc_lens = tf.placeholder(tf.int32, shape=[None], name="enc_lens") 
-		# inputs for training period 
-		self.dec_str_inps = tf.placeholder(tf.string, shape=[None, conf.output_max_len + 2], name="dec_inps") 
-		self.dec_lens = tf.placeholder(tf.int32, shape=[None], name="dec_lens") 
-		self.down_wgts = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
+		self.enc_str_inps = inputs["enc_inps:0"]
+		self.dec_str_inps = inputs["dec_inps:0"]
+		self.enc_lens = inputs["enc_lens:0"] 
+		self.dec_lens = inputs["dec_lens:0"]
+		self.down_wgts = inputs["down_wgts:0"]
 
 		with tf.name_scope("TableLookup"):
 			# Input maps
@@ -170,7 +181,7 @@ class CVAERNN(ModelCore):
 
 		if isinstance(self.enc_states[-1], LSTMStateTuple):
 			enc_state = LSTMStateTuple(self.enc_states[-1].c, init_h) 
-
+		
 		hidden_units = int(math.sqrt(mem_size * self.conf.enc_latent_dim))
 		z, mu_prior, logvar_prior = PriorNet([enc_state], hidden_units, self.conf.enc_latent_dim, stddev=1.0, prior_type=conf.prior_type)
 
@@ -424,11 +435,15 @@ class CVAERNN(ModelCore):
 		return restorer
 
 	def after_proc(self, out):
-		outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
+		if self.conf.variants == "":
+			outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
 
-		outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]
+			outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]
 
-		#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
-		sorted_outs = [sorted(outs[n], key=lambda x:x[1], reverse=True) for n in range(len(outs))]
-		after_proc_out = [[{"outputs":res[0], "probs":res[1]} for res in example] for example in sorted_outs]
-		return after_proc_out 
+			sorted_outs = outs
+			#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
+			#sorted_outs = [sorted(outs[n], key=lambda x:x[1], reverse=True) for n in range(len(outs))]
+			after_proc_out = [[{"outputs":res[0], "probs":res[1], "model_name":self.name} for res in example] for example in sorted_outs]
+			return after_proc_out 
+		else:
+			return out["logprobs"]

@@ -19,6 +19,7 @@ class Config:
 
         # MODEL HYPERPARAMS
         self.model_kind = ""
+        self.restore_from = ""
         self.input_vocab_size = 0
         self.output_vocab_size = 0
         self.num_layers = 0
@@ -39,13 +40,14 @@ class Config:
         self.dec_init_type = "each2each" # each2each, all2first, allzeros 
         self.use_init_proj = True # project final enc_states to dec init states 
         self.kld_ratio = 0.000
-        self.max_res_num = 70 
+        self.max_res_num = 50 
         self.visual_data_filename = None
         self.visual_tensor = None
         self.stddev = 1.0
         self.output_max_len = 0 
         self.input_max_len = 0 
         self.sample_prob = 0.0 
+        self.variants = ""
 
         # DISTRIBUTED 
         self.cluster = None

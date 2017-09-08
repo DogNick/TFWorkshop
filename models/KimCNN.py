@@ -4,15 +4,17 @@ import datetime
 import pickle
 import numpy as np
 import tensorflow as tf
+from ModelCore import *
 #from sklearn import metrics
 from word_seg.tencent_segment import *
 #from gensim.models.keyedvectors import KeyedVectors
 #from KimCNNLayer import KimCNNLayer
 #from EmbeddingWordLayer import EmbeddingWordLayer
 
-class KimCNN(object):
+class KimCNN(ModelCore):
 
-	def __init__(self, name, for_deploy=False, job_type="single", dtype=tf.float32, data_dequeue_op=None):
+	def __init__(self, name, job_type="single", task_id=0, dtype=tf.float32):
+		super(self.__class__, self).__init__(name, job_type, task_id, dtype) 
 		self.text_len = 40
 		self.pad_word = '<PADDINGWORD/>'
 		self.input_x_name = 'input_x'

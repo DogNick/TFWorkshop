@@ -49,13 +49,12 @@ def main():
 		#("news2s-twitter", None)
 		#("news2s-twitter-clean", 89401)
 		("cvae-noattn-opensubtitle_gt3", None)
+		#("cvaeattn-subtitle_gt3_joint_prime_clean", None)
 		#("news2s-opensubtitle_gt3_joint_prime", None)
 	]
 	scorer_names = [ 
-		#"attn-bi-s2s-all-downsample-addmem2",
-		#"attn-s2s-all-downsample-n-gram-addmem"
-		#("news2s-opensubtitle_gt3_reverse",  None)
-		("news2s-opensubtitle_gt3_joint_reverse",  None)
+		("news2s-opensubtitle_gt3_reverse",  None)
+		#("news2s-opensubtitle_gt3_joint_reverse",  None)
 	]
 
 	records = []
@@ -73,7 +72,7 @@ def main():
 	for model_name, ckpt_steps in runtime_names:
 		ckpt_dir = os.path.join(train_root, model_name) 
 		model = create(model_name, job_type="single", task_id=0)
-		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=train_root, model_core=model, variants="", gpu=FLAGS.gpu, ckpt_steps=ckpt_steps)
+		sess, graph_nodes, ckpt_steps = init_inference(runtime_root=train_root, model_core=model, gpu=FLAGS.gpu, ckpt_steps=ckpt_steps)
 		runtimes[model_name] = (sess, graph_nodes, model)
 		tf.reset_default_graph()
 
@@ -81,7 +80,8 @@ def main():
 	for model_name, ckpt_steps in scorer_names:
 		ckpt_dir = os.path.join(train_root, model_name) 
 		model = create(model_name, job_type="single", task_id=0)
-		sess, graph_nodes, global_steps = init_inference(runtime_root=train_root, model_core=model, variants="score", gpu=FLAGS.gpu, ckpt_steps=ckpt_steps)
+		model.conf.variants = "score"
+		sess, graph_nodes, global_steps = init_inference(runtime_root=train_root, model_core=model, gpu=FLAGS.gpu, ckpt_steps=ckpt_steps)
 		scorer[model_name] = (sess, graph_nodes, model)
 		tf.reset_default_graph()
 
@@ -93,83 +93,55 @@ def main():
 			input_feed = model.preproc(batch, use_seg=(FLAGS.lan=="ch"), for_deploy=True) 
 			step_out = sess.run(graph_nodes["outputs"], input_feed)
 			out_after_proc = model.after_proc(step_out)
+			batch_res_of_all_models.append(out_after_proc)
 
-			# Model scoring
-			#for k in range(len(out)):
-			#	examples = ["%s\t%s" % (batch[k], " ".join(each)) for each in out[k]]
-			#	for score_model_name in scorer:
-			#		if score_model_name == name:
-			#			continue
-			#		input_feed = scorer[score_model_name].preproc(examples, use_seg=is_ch, for_deploy=False)
-			#		step_out = scorer[score_model_name].step(input_feed=input_feed, forward_only=True, debug=False, for_deploy=True)
-			#		for n, prob in enumerate(step_out["logprobs"]):
-			#			probs[k][n] += prob
+		for k, example_res in enumerate(zip(*batch_res_of_all_models)):
+			all_model_res = []
+			[ all_model_res.extend(each) for each in example_res]
 
-			# Nick's re-score and some interference
-			batch_res = [] 
-			r = 0.37
-			for k, example_res in enumerate(out_after_proc):
-				outputs = [each["outputs"] for each in example_res]
-				probs = [each["probs"] for each in example_res]
+			r = 0.4
+			outputs = [each["outputs"] for each in all_model_res]
+			names = [each["model_name"] for each in all_model_res]
 
-				# Use Model scoring	
-				pairs = ["%s\t%s" % (batch[k], " ".join(each)) for each in outputs]
-				if len(pairs) == 0:
-					continue
-				scores = []
-				for score_model_name in scorer:
-					score_sess, score_graph_nodes, score_model = scorer[score_model_name]
-					score_input_feed = score_model.preproc(pairs, use_seg=(FLAGS.lan=="ch"), for_deploy=True, variants="score")
-					score_out = score_sess.run(score_graph_nodes["outputs"], score_input_feed)
-					scores.append(score_out["logprobs"])
+			#probs = [each["probs"] for each in all_model_res]
+			# Use Model scoring	
+			pairs = ["%s\t%s" % (batch[k], " ".join(each)) for each in outputs]
+			if len(pairs) == 0:
+				continue
+			scores = []
+			for score_model_name in scorer:
+				score_sess, score_graph_nodes, score_model = scorer[score_model_name]
+				score_input_feed = score_model.preproc(pairs, use_seg=(FLAGS.lan=="ch"), for_deploy=True)
+				score_out = score_sess.run(score_graph_nodes["outputs"], score_input_feed)
+				scores.append(score_out["logprobs"])
 
-				new_probs = [r * probs[l] + (1-r) * p for l, p in enumerate(scores[0])] 
-				#new_probs = probs
-				scored_res = Nick_plan.score_with_prob_attn(name, outputs, new_probs, None, alpha=0.4, beta=0.2, is_ch=(FLAGS.lan=="ch"), average_across_len=False)
+			posteriors = [sum(each) for each in zip(*scores)]
+			new_probs = [each["probs"] for each in all_model_res]  
 
-				#(model_name, final, info, gnmt_score, probs[n], lp_ratio, cp_score, enc_attn_scores, seged))
-				for l in range(len(scored_res)):
-					scored_res[l] = list(scored_res[l])
-					#scored_res[l][3] = r*scored_res[l][3] + (1-r) * scores[0][l] 
-					scored_res[l][4] = probs[l]
-					scored_res[l][5] = scores[0][l]
-				 
-				batch_res.append(scored_res)
-				#batch_res.append([(name, "".join(each[0]), "None", 0, 0, 0, 0, 0, "None")]) 
+			scored_res = Nick_plan.score_with_prob_attn(outputs, new_probs, None, posteriors, r, alpha=0.6, beta=0.2, is_ch=(FLAGS.lan=="ch"), average_across_len=False)
 
-		batch_res_of_all_models.append(batch_res)
+			for l, each in enumerate(names):
+				final, infos = scored_res[l]
+				infos["model_name"] = each
 
-		# Handle each batch of all model res, may merge their results of one example
-		for n in range(len(batch_res_of_all_models[0])):
-			one_res_of_all_model = []
-			for m in range(len(runtime_names)):
-				#sorted_res = Nick_plan.rank(batch_res_of_all_models[m][n])
-				sorted_res = batch_res_of_all_models[m][n]
-				#print sorted_res[0][3].keys()
-				#for each in sorted_res:
-				#	print each[0], each[1], each[2], "[All:%.5f]" % each[3], "[Org:%.5f]" % each[4], "[LenRatio:%.5f]" % each[5], "[AttnEnt:%.5f]" % each[6]
-				#	#print each[0], each[1], each[2], each[3].values()
-				one_res_of_all_model.extend(sorted_res)
-				#raw_input()
-			final_res = sorted(one_res_of_all_model, key=lambda x:x[3], reverse=True)
-			#final_res = sorted(one_res_of_all_model, key=lambda x:sum(x[3].values()) /float(len(x[1].decode("utf-8"))), reverse=True)
+			final_res = sorted(scored_res, key=lambda x:x[1]["score"], reverse=True)
+
 			if FLAGS.command == "see":
 				print "==================================="
-				print records[n + i]
+				print records[i + k]
 				print "==================================="
-				for each in final_res[0:80]:
-					#print each[0], each[-1], each[2], "[All:%.5f]" % each[3], "[Org:%.5f]" % each[4], "[LenRatio:%.5f]" % each[5], "[AttnEnt:%.5f]" % each[6]
-					print each[0], each[1], each[2], each[3], each[4], each[5]
+				for each in final_res[0:35]:
+					final, infos = each
+					print final, infos 
 				raw_input()
 			elif FLAGS.command == "dump":
 				if len(final_res) == 0:
-					print "[NO results] %s" % records[n + i] 
+					print "[NO results] %s" % records[i + k] 
 				else:
-					print "%s\t%s\t%s" % (records[n + i], final_res[0][1], final_res[0][0])
+					print "%s\t%s" % (records[i + k], final_res[0])
 			elif FLAGS.command == "dumpall":
-				for w in range(len(final_res)):
-					print "%s\t%s\t%s" % (orig_records[n + i], final_res[w][1], final_res[w][0])
-				#raw_input()
+				for final, infos in final_res:
+					print "%s\t%s\t%s" % (records[i + k], final, infos)
 			else:
 				print "command dump or see"
 

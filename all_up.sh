@@ -23,6 +23,9 @@
 #sh job.sh see allattn_dist
 
 
+#sh job.sh create cvaeattn-subtitle_gt3_joint_prime_clean single 0 0 
+#sleep 1.0
+#sh job.sh see cvaeattn-subtitle_gt3_joint_prime_clean 
 
 #sh job.sh create vaeattn-opensubtitle_gt3_joint_prime single 0 1 
 #sleep 1.0
@@ -44,8 +47,12 @@
 #sleep 1.0
 #sh job.sh see news2s-opensubtitle_gt3_joint_reverse 
 
-
-sh job.sh create cvae-noattn-opensubtitle_gt3 single 0 6 
-sleep 1.0
+#sh job.sh create cvae-noattn-opensubtitle_gt3 single 0 6 
+#sleep 1.0
 #sh job.sh see cvae-noattn-opensubtitle_gt3 
+
+sh job.sh create cvaeattn2-weibo-bought single 0 0 
+sleep 1.0
+sh job.sh see cvaeattn2-weibo-bought 
+
 

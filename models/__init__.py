@@ -20,11 +20,14 @@ from tensorflow.python.ops import variable_scope
 from VAERNN2 import * 
 from VAERNN import *
 from CVAERNN import *
+from CVAERNNemb import *
 from AllAttn import *
 from AttnS2SNewDecInit import *
 from VAEattnRNN import *
 from KimCNN import *
 from RNNClassification import *
+from CVAEattnRNN import * 
+from CVAEattnRNN2 import * 
 
 from Tsinghua_plan import *
 from Nick_plan import *
@@ -40,18 +43,13 @@ graphlg = log.getLogger("graph")
 trainlg = log.getLogger("train")
 
 magic = {
-        #"DeepMatch": DeepMatch,
-        #"DeepMatchContrastive": DeepMatchContrastive,
-        #"DeepMatchInteract": DeepMatchInteract,
-        #"DeepMatchInteractQPPR": DeepMatchInteractQPPR,
-        #"DeepMatchInteractQPRnegPR": DeepMatchInteractQPRnegPR,
-        #"DeepMatchInteractConcatRNN": DeepMatchInteractConcatRNN,
-
-        #"DynAttnTopicSeq2Seq": DynAttnTopicSeq2Seq,
         "VAERNN2": VAERNN2,
         "VAERNN": VAERNN,
 		"VAEattnRNN": VAEattnRNN,
+		"CVAEattnRNN": CVAEattnRNN,
+		"CVAEattnRNN2": CVAEattnRNN2,
         "CVAERNN": CVAERNN,
+        "CVAERNNemb": CVAERNNemb,
         "RNNClassification": RNNClassification,
         "Postprob": Postprob,
         "Tsinghua": Tsinghua,
@@ -125,7 +123,7 @@ def init_monitored_train(runtime_root, model_core, gpu=""):
 			model_core.dev_set = [line.strip() for line in f]	 
 
 	# Build graph on device
-	graph_nodes = model_core.build_all(for_deploy=False, variants="", device=device)
+	graph_nodes = model_core.build_all(for_deploy=False, device=device)
 
 	# Create hooks and master server descriptor	
 	saver_hook = hook.NickCheckpointSaverHook(checkpoint_dir=ckpt_dir,
@@ -191,7 +189,7 @@ def init_dummy_train(runtime_root, model_core, create_new=True, gpu=0):
 									gpu_options=gpu_options,
 									intra_op_parallelism_threads=32)
 	print "Building..."
-	graph_nodes = model_core.build_all(for_deploy=False, variants="", device="/gpu:%d" % int(gpu))
+	graph_nodes = model_core.build_all(for_deploy=False, device="/gpu:%d" % int(gpu))
 	print "Creating Data queue..."
 	path = os.path.join(confs[model_core.name].data_dir, "train.data")
 	qr = QueueReader(filename_list=[path], shared_name="temp_queue")
@@ -216,21 +214,21 @@ def init_dummy_train(runtime_root, model_core, create_new=True, gpu=0):
 	#sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 	return sess, graph_nodes
 
-def init_inference(runtime_root, model_core, variants="", gpu="", ckpt_steps=None):
-	core_str = "cpu:0" if (gpu is None or gpu == "") else "/gpu:%d" % int(gpu)
-	ckpt_dir = os.path.join(runtime_root, model_core.name)
+def init_inference(runtime_root, model_core, gpu="", ckpt_steps=None):
+	core_str = "/cpu:0" if (gpu is None or gpu == "") else "/gpu:%d" % int(gpu)
+	restore_from = model_core.conf.restore_from if model_core.conf.restore_from else model_core.name
+	ckpt_dir = os.path.join(runtime_root, restore_from)
 	if not os.path.exists(ckpt_dir):
 		print ("\n No checkpoint dir found !!! exit")
 		exit(0)
 	gpu_options = tf.GPUOptions(allow_growth=True, allocator_type="BFC")
 	session_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False,
 								gpu_options=gpu_options, intra_op_parallelism_threads=32)
-	graph_nodes = model_core.build_all(for_deploy=True, variants=variants, device=core_str)
+	graph_nodes = model_core.build_all(for_deploy=True, device=core_str)
 	sess = tf.Session(config=session_config)
 	#self.sess = tf.InteractiveSession(config=session_config)
 	#self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 
-	restorer = model_core.get_restorer()
 	ckpt = tf.train.get_checkpoint_state(ckpt_dir, latest_filename=None)
 	filename = None
 	if ckpt_steps:
@@ -243,13 +241,12 @@ def init_inference(runtime_root, model_core, variants="", gpu="", ckpt_steps=Non
 				break
 	else:
 		filename = ckpt.model_checkpoint_path
-		print filename
 		ckpt_steps = re.split("\-", filename)[-1]
 		print ("use latest %s as inference model" % ckpt_steps)
 	if filename == None:
 		print ("\n No checkpoint step %s found in %s" % (str(ckpt_steps), ckpt_dir))
 		exit(0)
-	restorer.restore(save_path=filename, sess=sess)
+	model_core.get_restorer().restore(save_path=filename, sess=sess)
 
 	return sess, graph_nodes, ckpt_steps
 	
