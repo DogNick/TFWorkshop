@@ -33,11 +33,11 @@ class AttnS2SNewDecInit(ModelCore):
 			"enc_lens:0":tf.placeholder(tf.int32, shape=[None], name="enc_lens")
 		}
 		# inputs for training period 
-		if not for_deploy or self.conf.variants == "score":
-			inputs["dec_inps:0"] = tf.placeholder(tf.string, shape=[None, self.conf.output_max_len + 2], name="dec_inps")
-			inputs["dec_lens:0"] = tf.placeholder(tf.int32, shape=[None], name="dec_lens")
-			if not self.conf.variants == "score":
-				inputs["down_wgts:0"] = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
+		#if not for_deploy or self.conf.variants == "score":
+		inputs["dec_inps:0"] = tf.placeholder(tf.string, shape=[None, self.conf.output_max_len + 2], name="dec_inps")
+		inputs["dec_lens:0"] = tf.placeholder(tf.int32, shape=[None], name="dec_lens")
+		#if not self.conf.variants == "score":
+		inputs["down_wgts:0"] = tf.placeholder(tf.float32, shape=[None], name="down_wgts")
 		return inputs
 
 	def build(self, inputs, for_deploy):
@@ -289,7 +289,7 @@ class AttnS2SNewDecInit(ModelCore):
 
 	def after_proc(self, out):
 		if self.conf.variants == "score":
-			return list(out["logprobs"])
+			return [{"posteriors":float(each)} for each in list(out["logprobs"])]
 		else:
 			outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
 			outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]

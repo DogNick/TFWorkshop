@@ -230,7 +230,9 @@ class CVAERNNemb(ModelCore):
 		keys = out.keys()
 		values = out.values()
 		after_proc_out = []
-		for v in zip(*values):
+		for n, v in enumerate(zip(*values)):
+			if n == 0:
+				continue
 			pair = {k:str(v[i]) for i, k in enumerate(keys)}
 			pair["model_name"] = self.name
 			after_proc_out.append(pair)

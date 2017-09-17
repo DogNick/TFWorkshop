@@ -162,7 +162,10 @@ class CVAEattnRNN2(ModelCore):
 									attn_size=mem_size, memory=beam_memory, mem_lens=beam_memory_lens, max_mem_size=max_mem_size,
 									addmem=conf.addmem, z=beam_z, dtype=tf.float32, name="AttnWrapper")
 			
-		dec_init_state = None if self.conf.attention else zero_cell_states
+		if self.conf.attention:
+			dec_init_state = None 
+		else:
+			dec_init_state = beam_decoder.BeamState(tf.zeros_like(beam_memory_lens, tf.float32), zero_cell_states, tf.zeros_like(beam_memory_lens))
 		with tf.variable_scope("OutProj"):
 			graphlg.info("Creating out_proj...") 
 			if conf.out_layer_size:
@@ -215,7 +218,6 @@ class CVAEattnRNN2(ModelCore):
 				#tf.summary.scalar("bow", bow_loss)
 				for each in tf.trainable_variables():
 					tf.summary.histogram(each.name, each)
-
 			graph_nodes = {
 				"loss":self.loss,
 				"inputs":inputs,
@@ -229,6 +231,9 @@ class CVAEattnRNN2(ModelCore):
 			hp_infer = helper1_2.GreedyEmbeddingHelper(embedding=self.embedding, start_tokens=tf.ones([beam_batch_size], dtype=tf.int32),
 														end_token=EOS_ID, out_proj=out_proj)
 			output_layer = layers_core.Dense(conf.out_layer_size, use_bias=True) if conf.out_layer_size else None
+
+				
+
 			my_decoder = beam_decoder.BeamDecoder(cell=attn_cell, helper=hp_infer, out_proj=out_proj, initial_state=dec_init_state, beam_splits=conf.beam_splits,
 													max_res_num=conf.max_res_num, output_layer=output_layer)
 			#cell_outs, final_state = decoder.dynamic_decode(decoder=my_decoder, scope=scope, maximum_iterations=conf.output_max_len)
@@ -307,10 +312,13 @@ class CVAEattnRNN2(ModelCore):
 				"beam_end_probs":self.beam_end_probs,
 				"beam_attns":self.beam_attns
 			}
-
+			
+			infer_inputs = {} 
+			infer_inputs["enc_inps:0"] = inputs["enc_inps:0"]
+			infer_inputs["enc_lens:0"] = inputs["enc_lens:0"]
 			graph_nodes = {
 				"loss":None,
-				"inputs":inputs,
+				"inputs":infer_inputs,
 				"outputs":outputs,
 				"visualize":{"z":z}
 			}
@@ -362,7 +370,7 @@ class CVAEattnRNN2(ModelCore):
 
 	def after_proc(self, out):
 		outputs, probs, attns = Nick_plan.handle_beam_out(out, self.conf.beam_splits)
-
+		
 		outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]
 
 		#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)

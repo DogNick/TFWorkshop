@@ -7,7 +7,6 @@ import sys
 import os
 import re
 
-
 def clean(text):
     text = re.sub("\(.*\)", "", text)
     text = re.sub("\[.*?\]", "", text)

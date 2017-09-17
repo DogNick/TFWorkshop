@@ -366,6 +366,31 @@ confs["news2s-opensubtitle_gt3_joint_reverse"].addmem               = False
 confs["news2s-opensubtitle_gt3_joint_reverse"].attention            = "Luo" 
 confs["news2s-opensubtitle_gt3_joint_reverse"].reverse              = True
 
+confs["news2s-weibo-bought_reverse"] = copy.deepcopy(confs["vae"])
+confs["news2s-weibo-bought_reverse"].model_kind           = "AttnS2SNewDecInit"
+confs["news2s-weibo-bought_reverse"].input_vocab_size     = 41000 
+confs["news2s-weibo-bought_reverse"].output_vocab_size    = 41000 
+confs["news2s-weibo-bought_reverse"].lr_check_steps       = 150 
+confs["news2s-weibo-bought_reverse"].embedding_size       = 200
+confs["news2s-weibo-bought_reverse"].lr_keep_steps        = 80000  
+confs["news2s-weibo-bought_reverse"].learning_rate        = 0.0001
+confs["news2s-weibo-bought_reverse"].learning_rate_decay_factor = 1.0 
+confs["news2s-weibo-bought_reverse"].batch_size           = 128 
+confs["news2s-weibo-bought_reverse"].cell_model           = "LSTMCell"
+confs["news2s-weibo-bought_reverse"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-bought"
+confs["news2s-weibo-bought_reverse"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-bought/weibo-stc-bought.w2v.npy"
+
+confs["news2s-weibo-bought_reverse"].input_max_len        = 35 
+confs["news2s-weibo-bought_reverse"].output_max_len       = 25 
+confs["news2s-weibo-bought_reverse"].opt_name             = "Adam" 
+confs["news2s-weibo-bought_reverse"].lam                  = 0.0 
+confs["news2s-weibo-bought_reverse"].beam_splits          = [6,6,6,6,6,6,6,6,6,6,6,6,6]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
+confs["news2s-weibo-bought_reverse"].use_data_queue       = False
+confs["news2s-weibo-bought_reverse"].addmem               = False 
+confs["news2s-weibo-bought_reverse"].attention            = "Luo" 
+confs["news2s-weibo-bought_reverse"].reverse              = True
+
+
 
 confs["news2s-noinit-opensubtitle_gt3"] = copy.deepcopy(confs["vae"])
 confs["news2s-noinit-opensubtitle_gt3"].model_kind           = "AttnS2SNewDecInit"

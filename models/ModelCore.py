@@ -143,7 +143,11 @@ class ModelCore(object):
 
 		inputs = {k:utils.build_tensor_info(v) for k, v in nodes["inputs"].items()}
 		outputs = {k:utils.build_tensor_info(v) for k, v in nodes["outputs"].items()}
-
+		
+		print "==== INPUTS ===="
+		print inputs
+		print "==== OUTPUTS ===="
+		print outputs
 		signature_def = signature_def_utils.build_signature_def(inputs=inputs,
 				outputs=outputs, 
 				method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)

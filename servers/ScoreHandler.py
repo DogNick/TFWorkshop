@@ -31,19 +31,31 @@ class ScoreHandler(ModelHandler):
 		for name in schedule:
 			scorers[name] = schedule[name]["graph_stub"]
 
-		records = [query.encode("utf-8")]
-		for each in cans:
-			records.append(each.encode("utf-8"))
+		results = [] 
 
-		# use multi-model result
-		multi_models = [self.run_model(g, stub, records, use_seg=False) for g, stub in scorers.values()]
-		outs = yield multi(multi_models)
+		multi_models = []
+		for name in schedule:
+			if name.find("_reverse") != -1:
+				records = ["%s\t%s" % (query.encode("utf-8"), each.encode("utf-8")) for each in cans]
+				g, stub = schedule[name]["graph_stub"]
+			else:
+				records = [query.encode("utf-8")]
+				for each in cans:
+					records.append(each.encode("utf-8"))
+				g, stub = schedule[name]["graph_stub"]
 
-		# only one model
-		one_model_out = outs[0]
-		results = [outs[0][i] for i in range(1, len(outs[0]))] 
-		debug_infos = [{} for each in results]
+			multi_models.append(self.run_model(g, stub, records, use_seg=False))
+			outs = yield multi(multi_models)
 
+			# only one model
+			for i in range(len(outs[0])):
+				ensembled = {}
+				for each_model_res in outs:
+					for k,v in each_model_res[i].items():
+						ensembled[k] = v
+				results.append(ensembled)
+			debug_infos = [{} for each in results]
+		
 		raise gen.Return((results, debug_infos, "score by rnn_enc and sum of word embs"))
 
 	def form_multi_results(self, plan_results, infos): 

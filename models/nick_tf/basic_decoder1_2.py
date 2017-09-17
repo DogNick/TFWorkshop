@@ -179,10 +179,10 @@ class BasicDecoder(decoder.Decoder):
     Returns:
       `(outputs, next_state, next_inputs, finished)`.
     """
-    with ops.name_scope(name, "BasicDecoderStep", (time, inputs, state)) as scope:
-    #with tf.variable_scope(name, "BasicDecoderStep") as scope:
-      #cell_outputs, cell_state = self._cell(inputs, state, scope=scope)
-      cell_outputs, cell_state = self._cell(inputs, state)
+    #with ops.name_scope(name, "BasicDecoderStep", (time, inputs, state)) as scope:
+    with tf.variable_scope(name, "BasicDecoderStep") as scope:
+      cell_outputs, cell_state = self._cell(inputs, state, scope=scope)
+      #cell_outputs, cell_state = self._cell(inputs, state)
       if self._output_layer is not None:
         cell_outputs = self._output_layer(cell_outputs)
       sample_ids = self._helper.sample(

@@ -183,9 +183,9 @@ def score_with_prob_attn(ans, probs, attns, posteriors=None, lbda=None, alpha=0.
                 break
         #words = remove_rep(words)
         for each in dup: 
-            if each.decode("utf-8") not in [u"。", u"，", u"？", u"哈", u".", u",", u"!", u"?", u"'"] and dup[each] > 2:
-                isdup = True
-                break
+            #if each.decode("utf-8") not in [u"。", u"，", u"？", u"哈", u".", u",", u"!", u"?", u"'"] and dup[each] > 2:
+            #    isdup = True
+            #    break
             if dup[each] > 1:
                 dupcount += 1
                 #if (dupcount >= len(dup) / 2) and dupcount >= 2:
@@ -263,7 +263,7 @@ def score_with_prob_attn(ans, probs, attns, posteriors=None, lbda=None, alpha=0.
                 infos["lp"] = lp_ratio
                 infos["cp"] = cp_score
         infos["prob"] = round(float(probs[n]), 4)
-        infos["posterior"] = round(float(posteriors[n]), 4)
+        infos["posterior"] = round(float(posteriors[n]), 4) if posteriors else 0
         infos["score"] = round(gnmt_score, 4)
         infos["info"] = info
         results.append((final, infos))

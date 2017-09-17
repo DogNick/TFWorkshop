@@ -35,6 +35,16 @@ SERVER_SCHEDULES = {
         },
         {
             "vae-reddit-addmem":{"tf_server":"0.0.0.0:10012","deploy_gpu":1, "max_in":15, "max_out":15, "max_res":10, "beam_splits":[4,4,4,4,4,4,4,4]}
+        },
+        {
+            "cvaeattn2-weibo-bought":{
+				"tf_server":"0.0.0.0:10013",
+				"deploy_gpu":6,
+				"max_in":15,
+				"max_out":20,
+				"max_res":60,
+				"beam_splits":[4,4,4,4,4,4,4,4,4]
+			}
         }
     ],
     "tsinghua":[
@@ -67,19 +77,50 @@ SERVER_SCHEDULES = {
     ],
 	"chaten":[
         {
-            "cvae-noattn-opensubtitle_gt3":{"tf_server":"0.0.0.0:10050","deploy_gpu":7},
-            "news2s-opensubtitle_gt3_reverse":{
+            #"cvae-noattn-opensubtitle_gt3":{"tf_server":"0.0.0.0:10050","deploy_gpu":7},
+			#"news2s-opensubtitle_gt3_reverse":{
+			#	"tf_server":"0.0.0.0:10051",
+			#	"deploy_gpu":7,
+			#	"variants":"score",
+			#	"lmda":0.4,
+			#	"alpha":0.6,
+			#	"beta":0.1,
+			#},
+
+			"cvaeattn-subtitle_gt3_joint_prime_clean":{
+				"tf_server":"0.0.0.0:10050",
+				"deploy_gpu":7,
+				"joint_prime":True,
+				"max_res":25,
+			},
+			"news2s-opensubtitle_gt3_joint_reverse":{
 				"tf_server":"0.0.0.0:10051",
 				"deploy_gpu":7,
 				"variants":"score",
-				"lmda":0.3,
+				"lmda":0.4,
 				"alpha":0.6,
 				"beta":0.1,
-			},
+				"joint_prime":True
+			}
+            
         }
     ],
 	"scorer":[
-		{"cvae-noattn-opensubtitle_gt3-emb":{"tf_server":"0.0.0.0:10060","deploy_gpu":6}}
+		{
+			"cvae-noattn-opensubtitle_gt3-emb":{
+				"tf_server":"0.0.0.0:10060",
+				"deploy_gpu":6
+			},
+			"news2s-opensubtitle_gt3_joint_reverse":{
+				"tf_server":"0.0.0.0:10052",
+				"deploy_gpu":7,
+				"variants":"score",
+				"lmda":0.4,
+				"alpha":0.6,
+				"beta":0.1,
+				"joint_prime":True
+			}
+		}
 	]
 }
 
@@ -91,7 +132,8 @@ DESC = {
             "to generate and rerank with GNMT score",
     "matchpoem": "for fun",
     "judgepoem": "to pickup all possible poem sentences from one query and show the probs",
-	"chaten": "cvae-noattn + posterior probability score"
+	"chaten": "cvae-noattn + posterior probability score",
+	"cvae-generate": "cvaeattn2, z on enc_states and attention,  posterior probability score is comming soon"
 }
 
 ####################################################################

@@ -109,8 +109,8 @@ confs["cvae-noattn-opensubtitle_gt3"].addmem               = False
 confs["cvae-noattn-opensubtitle_gt3"].kld_ratio            = 1.1
 confs["cvae-noattn-opensubtitle_gt3"].prior_type           = "mlp"
 confs["cvae-noattn-opensubtitle_gt3"].attention            = None 
-confs["cvae-noattn-opensubtitle_gt3"].dec_init_type            = "each2each" 
-confs["cvae-noattn-opensubtitle_gt3"].use_init_proj            = True 
+confs["cvae-noattn-opensubtitle_gt3"].dec_init_type        = "each2each" 
+confs["cvae-noattn-opensubtitle_gt3"].use_init_proj        = True 
 
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"] = copy.deepcopy(confs["vae"])
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"].model_kind           = "CVAEattnRNN"
@@ -120,9 +120,9 @@ confs["cvaeattn-subtitle_gt3_joint_prime_clean"].lr_check_steps       = 150
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"].lr_keep_steps        = 80000  
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"].embedding_size       = 200
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"].num_layers           = 3 
-confs["cvaeattn-subtitle_gt3_joint_prime_clean"].learning_rate        = 0.0002
+confs["cvaeattn-subtitle_gt3_joint_prime_clean"].learning_rate        = 0.00001
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"].learning_rate_decay_factor = 1.0 
-confs["cvaeattn-subtitle_gt3_joint_prime_clean"].batch_size           = 128 
+confs["cvaeattn-subtitle_gt3_joint_prime_clean"].batch_size           = 64 
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"].cell_model           = "LSTMCell"
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3_joint_prime_clean"
 confs["cvaeattn-subtitle_gt3_joint_prime_clean"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/opensubtitle_gt3_joint_prime_clean/all_resp_gt3_clean.w2v.npy"
@@ -149,9 +149,9 @@ confs["cvaeattn2-weibo-bought"].lr_check_steps       = 150
 confs["cvaeattn2-weibo-bought"].lr_keep_steps        = 80000  
 confs["cvaeattn2-weibo-bought"].embedding_size       = 200
 confs["cvaeattn2-weibo-bought"].num_layers           = 4 
-confs["cvaeattn2-weibo-bought"].learning_rate        = 0.00005
+confs["cvaeattn2-weibo-bought"].learning_rate        = 0.0001
 confs["cvaeattn2-weibo-bought"].learning_rate_decay_factor = 1.0 
-confs["cvaeattn2-weibo-bought"].batch_size           = 128 
+confs["cvaeattn2-weibo-bought"].batch_size           = 64 
 confs["cvaeattn2-weibo-bought"].cell_model           = "LSTMCell"
 confs["cvaeattn2-weibo-bought"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-bought"
 confs["cvaeattn2-weibo-bought"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-bought/weibo-stc-bought.w2v.npy"
@@ -169,6 +169,34 @@ confs["cvaeattn2-weibo-bought"].prior_type           = "mlp"
 confs["cvaeattn2-weibo-bought"].attention            = "Luo"
 confs["cvaeattn2-weibo-bought"].dec_init_type        = "last2first" 
 
+confs["cvaeattn2-512-weibo-bought"] = copy.deepcopy(confs["vae"])
+confs["cvaeattn2-512-weibo-bought"].model_kind           = "CVAEattnRNN2"
+confs["cvaeattn2-512-weibo-bought"].input_vocab_size     = 41000
+confs["cvaeattn2-512-weibo-bought"].output_vocab_size    = 41000
+confs["cvaeattn2-512-weibo-bought"].lr_check_steps       = 150 
+confs["cvaeattn2-512-weibo-bought"].lr_keep_steps        = 80000  
+confs["cvaeattn2-512-weibo-bought"].embedding_size       = 200
+confs["cvaeattn2-512-weibo-bought"].num_layers           = 3 
+confs["cvaeattn2-512-weibo-bought"].learning_rate        = 0.0001
+confs["cvaeattn2-512-weibo-bought"].learning_rate_decay_factor = 1.0 
+confs["cvaeattn2-512-weibo-bought"].batch_size           = 64 
+confs["cvaeattn2-512-weibo-bought"].cell_model           = "LSTMCell"
+confs["cvaeattn2-512-weibo-bought"].data_dir             = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-bought"
+confs["cvaeattn2-512-weibo-bought"].embedding_init       = "/search/odin/Nick/GenerateWorkshop/data/WEIBO-stc-bought/weibo-stc-bought.w2v.npy"
+confs["cvaeattn2-512-weibo-bought"].input_max_len        = 25 
+confs["cvaeattn2-512-weibo-bought"].output_max_len       = 30 
+confs["cvaeattn2-512-weibo-bought"].opt_name             = "Adam" 
+confs["cvaeattn2-512-weibo-bought"].enc_latent_dim       = 512 
+confs["cvaeattn2-512-weibo-bought"].lam                  = 0.0 
+confs["cvaeattn2-512-weibo-bought"].beam_splits          = [10,10,10,10,10,10,10]#[4,4,4,4,4,4,4,4,4,4]#[8,8,8,8,8,8,8,8,8]#[6,6,6,6,6,6,6,6]#test[2,2,2,2,2,2,2,2] 
+confs["cvaeattn2-512-weibo-bought"].use_data_queue       = False
+confs["cvaeattn2-512-weibo-bought"].stddev               = 1.0 
+confs["cvaeattn2-512-weibo-bought"].addmem               = False 
+confs["cvaeattn2-512-weibo-bought"].kld_ratio            = 1.0 
+confs["cvaeattn2-512-weibo-bought"].prior_type           = "mlp"
+confs["cvaeattn2-512-weibo-bought"].attention            = "Luo"
+confs["cvaeattn2-512-weibo-bought"].dec_init_type        = "last2first" 
+
 confs["cvaenoattn2-weibo-bought"] = copy.deepcopy(confs["vae"])
 confs["cvaenoattn2-weibo-bought"].model_kind           = "CVAEattnRNN2"
 confs["cvaenoattn2-weibo-bought"].input_vocab_size     = 41000
@@ -177,7 +205,7 @@ confs["cvaenoattn2-weibo-bought"].lr_check_steps       = 150
 confs["cvaenoattn2-weibo-bought"].lr_keep_steps        = 80000  
 confs["cvaenoattn2-weibo-bought"].embedding_size       = 200
 confs["cvaenoattn2-weibo-bought"].num_layers           = 4 
-confs["cvaenoattn2-weibo-bought"].learning_rate        = 0.00005
+confs["cvaenoattn2-weibo-bought"].learning_rate        = 0.0001
 confs["cvaenoattn2-weibo-bought"].learning_rate_decay_factor = 1.0 
 confs["cvaenoattn2-weibo-bought"].batch_size           = 128 
 confs["cvaenoattn2-weibo-bought"].cell_model           = "LSTMCell"
@@ -196,8 +224,6 @@ confs["cvaenoattn2-weibo-bought"].kld_ratio            = 1.0
 confs["cvaenoattn2-weibo-bought"].prior_type           = "mlp"
 confs["cvaenoattn2-weibo-bought"].attention            = None 
 confs["cvaenoattn2-weibo-bought"].dec_init_type        = "last2first"
-
-
 
 
 

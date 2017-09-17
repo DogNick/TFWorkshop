@@ -127,7 +127,7 @@ def init_monitored_train(runtime_root, model_core, gpu=""):
 
 	# Create hooks and master server descriptor	
 	saver_hook = hook.NickCheckpointSaverHook(checkpoint_dir=ckpt_dir,
-											checkpoint_steps=200,
+											checkpoint_steps=400,
 											model_core=model_core,
 											dev_fetches={"loss":graph_nodes["loss"]},
 											firein_steps=10000)
@@ -135,7 +135,7 @@ def init_monitored_train(runtime_root, model_core, gpu=""):
 									graph_nodes["debug_outputs"],
 									summary_dir=ckpt_dir,
 									summary_steps=20,
-									debug_steps=40)
+									debug_steps=100)
 	if model_core.job_type == "worker":
 		ready_for_local_init_op = model_core.opt.ready_for_local_init_op
 		local_op = model_core.opt.chief_init_op if model_core.task_id==0 else model_core.opt.local_step_init_op

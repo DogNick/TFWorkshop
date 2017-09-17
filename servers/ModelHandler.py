@@ -110,7 +110,7 @@ class ModelHandler(tornado.web.RequestHandler):
 		request = predict_pb2.PredictRequest()
 		request.model_spec.name = graph.name 
 		values = feed_data.values()	
-		N = len(values[0]) if len(values[0]) < 4 else 4
+		N = len(values[0]) if len(values[0]) < 2 else 2 
 		see_feed = {k:v[0:N] for k, v in feed_data.items()}
 		serverlg.info('[DispatcherServer] [sample %d/%d] %s' % (N, len(values), str(see_feed)))
 		for key, value in feed_data.items():

@@ -114,9 +114,8 @@ def clean_en(sentence, need_pos=False, joint_prime=False, lower=True):
 	else:
 		sentence = re.sub("[^ \t](')[^ \t]", " \\1 ", sentence) 
 
-	sentence = re.sub("([\"?.!,;:])", " \\1 ", sentence)
+	sentence = re.sub("([\"?\.!,;:])", " \\1 ", sentence)
 	sentence = re.sub(" +", " ", sentence)
-
 	if lower:
 		sentence = sentence.lower()
 	
