@@ -446,4 +446,4 @@ class CVAERNN(ModelCore):
 			after_proc_out = [[{"outputs":res[0], "probs":res[1], "model_name":self.name} for res in example] for example in sorted_outs]
 			return after_proc_out 
 		else:
-			return out["logprobs"]
+			return [float(each) in out["logprobs"]]

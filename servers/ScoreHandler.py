@@ -14,7 +14,8 @@ class ScoreHandler(ModelHandler):
 		# collect infos for current request
 		data = json.loads(self.request.body)
 		query = data["query"]
-		cans = data["cans"]
+		posts = data["cans"]
+		resps = data["responses"]
 		#query = self.get_argument('query', None)
 		#cans = self.get_argument('cans', None)
 		# check valid
@@ -26,35 +27,34 @@ class ScoreHandler(ModelHandler):
 		#	self.finish()
 		#	return
 
-		# this is for query embedding
-		scorers = {}
-		for name in schedule:
-			scorers[name] = schedule[name]["graph_stub"]
+		# prepare data records type for different model
+		query_clean_joint = util.clean_en(sentence=query.encode("utf-8"), need_pos=False, joint_prime=True)
+		query_clean = util.clean_en(sentence=query.encode("utf-8"), need_pos=False, joint_prime=True)
+		posterior_records =["%s\t%s" % (query_clean_joint, util.clean_en(sentence=each.encode("utf-8"), need_pos=False, joint_prime=True)) for each in resps]
+		similarity_records = [query_clean]
+		for each in posts:
+			similarity_records.append(util.clean_en(sentence=each.encode("utf-8"), need_pos=False, joint_prime=False))
 
-		results = [] 
-
+		# different records type for different models
 		multi_models = []
 		for name in schedule:
+			g, stub = schedule[name]["graph_stub"]
 			if name.find("_reverse") != -1:
-				records = ["%s\t%s" % (query.encode("utf-8"), each.encode("utf-8")) for each in cans]
-				g, stub = schedule[name]["graph_stub"]
+				multi_models.append(self.run_model(g, stub, posterior_records, use_seg=False))
 			else:
-				records = [query.encode("utf-8")]
-				for each in cans:
-					records.append(each.encode("utf-8"))
-				g, stub = schedule[name]["graph_stub"]
-
-			multi_models.append(self.run_model(g, stub, records, use_seg=False))
-			outs = yield multi(multi_models)
-
-			# only one model
-			for i in range(len(outs[0])):
-				ensembled = {}
-				for each_model_res in outs:
-					for k,v in each_model_res[i].items():
-						ensembled[k] = v
-				results.append(ensembled)
-			debug_infos = [{} for each in results]
+				multi_models.append(self.run_model(g, stub, similarity_records, use_seg=False))
+		# model in parallell and async
+		outs = yield multi(multi_models)
+	
+		results = [] 
+		for i in range(len(outs[0])):
+			ensembled = {}
+			for each_model_res in outs:
+				for k,v in each_model_res[i].items():
+					ensembled[k] = v
+			print ensembled
+			results.append(ensembled)
+		debug_infos = [{} for each in results]
 		
 		raise gen.Return((results, debug_infos, "score by rnn_enc and sum of word embs"))
 

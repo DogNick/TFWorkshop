@@ -4,7 +4,7 @@ SERVICE=chaten
 SCHEDULE=0
 sh stop.sh $PORT 
 #TF_CPP_MIN_VLOG_LEVEL=1 
-CUDA_VISIBLE_DEVICES=7 nohup python -u Servers.py \
+nohup python -u Servers.py \
     --port=$PORT --procnum=4 \
     --service=$SERVICE --schedule=$SCHEDULE --deploy_root=deployments \
     --num_batch_threads=64 --batch_timeout_micros=80000 \

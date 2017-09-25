@@ -51,8 +51,14 @@ class ChatENHandler(ModelHandler):
 		pairs = ["%s\t%s" % (query_cleaned, " ".join(each)) for each in outputs]
 		multi_models = [self.run_model(g, stub, pairs, use_seg=False) for g, stub in scorers.values()]
 		multi_model_posteriors = yield multi(multi_models)
-		posteriors = [sum(each) for each in zip(*multi_model_posteriors)]
-		
+
+		posteriors = []
+		for each in zip(*multi_model_posteriors):
+			sum_posterior = 0.0	
+			for res in each:
+				sum_posterior += res["posteriors"]
+			posteriors.append(sum_posterior)
+				
 		# score results based on likelihood, posterior, valid check, and gnmt criteria 
 		scored = score_with_prob_attn(outputs, probs, None, posteriors, lbda=lmda, alpha=a, beta=b, is_ch=False, average_across_len=False)  
 
@@ -172,7 +178,8 @@ class GenerateHandler(ModelHandler):
 		pairs = ["%s\t%s" % (query_utf8, " ".join(each)) for each in outputs]
 		multi_models = [self.run_model(g, stub, pairs, use_seg=False) for g, stub in scorers.values()]
 		multi_model_posteriors = yield multi(multi_models)
-		posteriors = [sum(each) for each in zip(*multi_model_posteriors)]
+		
+		posteriors = [each["posterior"] for each in zip(*multi_model_posteriors)]
 		
 		# score results based on likelihood, posterior, valid check, and gnmt criteria 
 		scored = score_with_prob_attn(outputs, probs, None, posteriors, lbda=lmda, alpha=a, beta=b, is_ch=False, average_across_len=False)  

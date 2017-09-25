@@ -421,6 +421,7 @@ class CVAEattnRNN(ModelCore):
 		outs = [[(outputs[n][i], probs[n][i]) for i in range(len(outputs[n]))] for n in range(len(outputs))]
 
 		#sorted_outs = sorted(outs, key=lambda x:x[1]/len(x[0]), reverse=True)
-		sorted_outs = [sorted(outs[n], key=lambda x:x[1], reverse=True) for n in range(len(outs))]
+		#sorted_outs = [sorted(outs[n], key=lambda x:x[1], reverse=True) for n in range(len(outs))]
+		sorted_outs = outs
 		after_proc_out = [[{"outputs":res[0], "probs":res[1], "model_name":self.name} for res in example] for example in sorted_outs]
 		return after_proc_out 

@@ -15,6 +15,7 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import array_ops
+from util import clean_en
 
 from tensorflow.python.training.sync_replicas_optimizer import SyncReplicasOptimizer
 from tensorflow.contrib.layers.python.layers.embedding_ops import embedding_lookup_unique
@@ -183,7 +184,11 @@ class CVAERNNemb(ModelCore):
 			"outputs":{"rnn_enc":tf.concat([tf.zeros([1]), cos_dist_embs], 0), "sum_emb":tf.concat([tf.zeros([1]), cos_dist_word_embs], 0)},
 		}
 		return graph_nodes
-
+	#def preproc(self, records, for_deploy=False, use_seg=False, default_wgt=1.0):
+	#	if for_deploy:
+	#		records = [clean_en(s, False, False, True) for s in records]
+	#	return super(self.__class__, self).preproc(records, for_deploy, use_seg, default_wgt)
+		
 	def get_init_ops(self):
 		init_ops = []
 		if self.conf.embedding_init:
@@ -204,6 +209,7 @@ class CVAERNNemb(ModelCore):
 			init_ops.extend([op_in, op_out])
 		return init_ops
 
+	
 	def get_restorer(self):
 		var_list = self.global_params + self.trainable_params + self.optimizer_params + tf.get_default_graph().get_collection("saveable_objects")
 
@@ -233,7 +239,7 @@ class CVAERNNemb(ModelCore):
 		for n, v in enumerate(zip(*values)):
 			if n == 0:
 				continue
-			pair = {k:str(v[i]) for i, k in enumerate(keys)}
+			pair = {k:float(v[i]) for i, k in enumerate(keys)}
 			pair["model_name"] = self.name
 			after_proc_out.append(pair)
 		return after_proc_out

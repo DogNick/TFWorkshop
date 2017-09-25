@@ -86,7 +86,6 @@ SERVER_SCHEDULES = {
 			#	"alpha":0.6,
 			#	"beta":0.1,
 			#},
-
 			"cvaeattn-subtitle_gt3_joint_prime_clean":{
 				"tf_server":"0.0.0.0:10050",
 				"deploy_gpu":7,
@@ -95,7 +94,7 @@ SERVER_SCHEDULES = {
 			},
 			"news2s-opensubtitle_gt3_joint_reverse":{
 				"tf_server":"0.0.0.0:10051",
-				"deploy_gpu":7,
+				"deploy_gpu":6,
 				"variants":"score",
 				"lmda":0.4,
 				"alpha":0.6,
