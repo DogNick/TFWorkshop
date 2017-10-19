@@ -1,26 +1,26 @@
-import os
-import time
-import datetime
-import pickle
+#import os
+#import time
+#import datetime
+#import pickle
 import numpy as np
 import tensorflow as tf
 from ModelCore import *
 #from sklearn import metrics
-from word_seg.tencent_segment import *
+#from openpyxl import load_workbook
+from word_seg.tencent_segment import * # the word seg tool
 #from gensim.models.keyedvectors import KeyedVectors
-#from KimCNNLayer import KimCNNLayer
-#from EmbeddingWordLayer import EmbeddingWordLayer
 
 class KimCNN(ModelCore):
 
 	def __init__(self, name, job_type="single", task_id=0, dtype=tf.float32):
 		super(self.__class__, self).__init__(name, job_type, task_id, dtype) 
-		self.text_len = 40
+		self.text_len = 20 
 		self.pad_word = '<PADDINGWORD/>'
+		self.pad_word_tag = 0
 		self.input_x_name = 'input_x'
+		self.input_tag_name = 'input_tag'
 		self.output_prob_name = 'prob'
-		self.name = name
-	
+
 	def get_dataset(self, train_set, dev_set):
 		self.train_set = train_set
 		self.dev_set = dev_set
@@ -38,7 +38,7 @@ class KimCNN(ModelCore):
 		self.work_dir = work_dir
 
 		# default conf
-		self.voc_file_path = './word_data/logQAWeibo/log.qa.weibo.corpus.wordlist'
+		self.voc_file_path = '/search/odin/tianchuan/word_embedding/50d/pad/log.qa.weibo.vocab'
 
 		# Output directory for models and summaries
 		timestamp = str(int(time.time()))
@@ -50,7 +50,11 @@ class KimCNN(ModelCore):
 				key_dtype=tf.string, value_dtype=tf.int64, default_value=0,
 				shared_name="w2id_table", name="w2id_table", checkpoint=True)
 		self.input_x = tf.placeholder(tf.string, [None, self.max_length], name="intput_x")
+		self.input_tag = tf.placeholder(tf.int32, [None, self.max_length], name="input_tag")
 		self.input_y = tf.placeholder(tf.int32, [None], name="input_y")
+		self.input_x = tf.Print(self.input_x, [tf.shape(self.input_x)], message="x_shape")
+
+
 		if for_deploy:
 			self.dropout_keep_prob = tf.constant(1.0)
 		else:
@@ -58,11 +62,21 @@ class KimCNN(ModelCore):
 
 		layers = []
 		input_x_id = self.w2id_table.lookup(self.input_x)
+		input_x_id = tf.Print(input_x_id, [tf.shape(input_x_id)], message="x_id_shape")
 		layers.append(self.EmbeddingWordLayer(input_x_id, self.word_list.w2id, 
 					self.word_list.size, self.embedding_size,word_vec_file=self.word2vec))
 		layers.append(self.KimCNNLayer(layers[-1].output, self.max_length, 
-					self.embedding_size,self.filter_sizes, self.num_filters, self.dropout_keep_prob))
-		output = tf.contrib.layers.fully_connected(layers[-1].output, self.num_classes, activation_fn=None)
+					self.embedding_size,self.filter_sizes, self.num_filters, self.dropout_keep_prob, 'text'))
+
+		tag_layers = []
+		tag_layers.append(self.TagEmbeddingLayer(self.input_tag, self.embedding_size))
+		tag_layers.append(self.KimCNNLayer(tag_layers[-1].output, self.max_length, 
+					self.embedding_size, self.filter_sizes, self.num_filters, self.dropout_keep_prob, 'tag'))
+
+		ensemble_output = tf.concat([layers[-1].output, tag_layers[-1].output], 1)
+		ensemble_output = tf.Print(ensemble_output, [tf.shape(ensemble_output)], message="ensemble_output")	
+
+		output = tf.contrib.layers.fully_connected(ensemble_output, self.num_classes, activation_fn=None)
 		logits = output
 
 		l2_loss = 0
@@ -79,9 +93,10 @@ class KimCNN(ModelCore):
 			self.predictions = tf.argmax(logits, 1, name="predictions")
 			self.probability = tf.nn.softmax(logits, name="probability")
 
+		self.probability = tf.Print(self.probability, [tf.shape(self.probability)], message="out_shape")
 		# nodes for export
 		self.nodes = {
-			"inputs":{self.input_x_name:self.input_x},
+			"inputs":{self.input_x_name:self.input_x, self.input_tag_name:self.input_tag},
 			"outputs":{self.output_prob_name:self.probability}
 		}
 
@@ -124,6 +139,7 @@ class KimCNN(ModelCore):
 			ret = eval_set.get_batch(i)
 			feed_dict = {
 				self.input_x: ret[0],
+				self.input_tag: ret[2], # word tag feature
 				self.input_y: ret[1],
 				self.dropout_keep_prob: 1.0
 			}
@@ -176,6 +192,7 @@ class KimCNN(ModelCore):
 				ret = self.train_set.get_batch(shuffle_indices[i])
 				feed_dict = {
 					self.input_x: ret[0],
+					self.input_tag: ret[2], # word tag feature
 					self.input_y: ret[1],
 					self.dropout_keep_prob: dropout_keep_prob
 				}
@@ -234,23 +251,28 @@ class KimCNN(ModelCore):
 
 		return
 
-	def query_pad(self, query_seg):
-		if self.text_len > len(query_seg):
-			query_seg += [self.pad_word] * (self.text_len - len(query_seg))
+	def pad_seg_res(self, query_seg_res):
+		if self.text_len > len(query_seg_res):
+			query_seg_res += [(self.pad_word, self.pad_word_tag)] * (self.text_len - len(query_seg_res))
 		else:
-			query_seg = query_seg[0:self.text_len]
-		return query_seg
+			query_seg_res = query_seg_res[0:self.text_len]
+		return query_seg_res
 
 	def preproc(self, queries, use_seg=True, for_deploy=True):
-		# seg: format as [['how','are'], ['who', 'are','you']]
-		if use_seg:
-			queries = [seg_return_string(q.decode("utf-8")).decode('gbk').encode('utf-8') for q in queries]
-		queries_seg = [q.split() for q in queries]
+		# seg, result's format like: [[('i', 1),('love', '31'),('you', 2)], [('how', '5'),('dare', 31)]]
+		seg_results = [seg_with_pos(q.decode("utf-8")) for q in queries]
 		# pad
-		queries_seg_pad = [self.query_pad(q) for q in queries_seg]
+		seg_results_padded = [self.pad_seg_res(r) for r in seg_results]
+		# extract
+		queries_seg_padded = [[r[i][0] for i in range(len(r))] for r in seg_results_padded]
+		#print queries_seg_padded
+		tag_padded = [[r[i][1] for i in range(len(r))] for r in seg_results_padded]
+		#print tag_padded
 		# feed dict
-		feed_dict = {self.input_x_name:queries_seg_pad}
-
+		feed_dict = {
+			self.input_x_name:queries_seg_padded, 
+			self.input_tag_name:tag_padded
+		}
 		return feed_dict
 
 	def after_proc(self, output, neg_confidence_threshold=0.6):
@@ -259,19 +281,20 @@ class KimCNN(ModelCore):
 		preds = np.asarray([prob[1] > (1.0-neg_confidence_threshold) for prob in probs], dtype=np.int32)
 		out_after_proc = {
 			'tags' : list(preds),
-			#'probs' : list(probs),
+			#'probs' : probs,
 			'neg_confidence_threshold' : str(neg_confidence_threshold)
 		}
 		return out_after_proc
 
 
 	class KimCNNLayer(object):
-		def __init__(self, inputs, sequence_length, embedding_size, filter_sizes, num_filters, dropout_prob):
+		def __init__(self, inputs, sequence_length, embedding_size, filter_sizes, num_filters, dropout_prob, scope):
 			inputs_expanded = tf.expand_dims(inputs, -1)
 			# Create a convolution + maxpool layer for each filter size
 			pooled_outputs = []
 			for i, filter_size in enumerate(filter_sizes):
-				with tf.name_scope("conv-maxpool-%s" % filter_size):
+				with tf.name_scope("%s-conv-maxpool-%s" % (scope, filter_size)):
+				#with tf.name_scope("conv-maxpool-%s" % filter_size):
 					# Convolution Layer
 					filter_shape = [filter_size, embedding_size, 1, num_filters]
 					W = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W")
@@ -302,25 +325,39 @@ class KimCNN(ModelCore):
 			self.outsize = num_filters_total
 			
 			# Add dropout
-			with tf.name_scope("dropout"):
+			#with tf.name_scope("dropout"):
+			with tf.name_scope(scope + "-dropout"):
 				self.output = tf.nn.dropout(self.h_pool_flat, dropout_prob)
+			self.output = tf.Print(self.output, [tf.shape(self.output)], message="cnn_output")
+
 
 
 	class EmbeddingWordLayer(object):
 		def __init__(self, inputs, word2id, vocab_size, embedding_size, word_vec_file=None, pickle_vec=None):
 			with tf.device('/cpu:0'), tf.name_scope("embedding"):
-				w2v = np.random.uniform(-1.0, 1.0, (vocab_size+1, embedding_size)) # vocab_size+1 for adding padding word
+				w2v = np.random.uniform(-1.0, 1.0, (vocab_size, embedding_size)) # vocab_size+1 for adding padding word
 				w2v = np.cast['float32'](w2v)
 
 				if word_vec_file is not None:
 					# gensim format
-					w2v = np.random.uniform(-1.0, 1.0, (vocab_size+1, embedding_size)) # vocab_size+1 for adding padding word
+					w2v = np.random.uniform(-1.0, 1.0, (vocab_size, embedding_size)) # vocab_size+1 for adding padding word
 					w2v = np.cast['float32'](w2v)
 					#model = Word2Vec.load_word2vec_format(word_vec_file, binary=True)
 					model = KeyedVectors.load_word2vec_format(word_vec_file, binary=False)
 					for word in model.vocab:
 						if word in word2id:
-							w2v[word2id[word]+1] = model[word] # word2id[word]+1 for adding padding word
+							w2v[word2id[word]] = model[word] # word2id[word]+1 for adding padding word
 				w2v[0] = np.zeros(embedding_size) # this line for adding paddding word
-				word_vec = tf.Variable(w2v, name='word_embedding')
+				w2v = np.cast['float32'](w2v)
+				word_vec = tf.Variable(w2v, name='word_embedding', trainable=True)
 				self.output = tf.nn.embedding_lookup(word_vec, inputs)
+
+	class TagEmbeddingLayer(object):
+		def __init__(self, inputs, embedding_size):
+			with tf.device('/cpu:0'), tf.name_scope("embedding"):
+				tag_id2vec = np.random.uniform(-1.0, 1.0, (60, embedding_size)) # 60 kinds of tag
+				tag_id2vec = np.cast['float32'](tag_id2vec)
+				tag_id2vec = tf.Variable(tag_id2vec, name='tag_embedding', trainable=True)
+				self.output = tf.nn.embedding_lookup(tag_id2vec, inputs)
+				self.output = tf.Print(self.output, [tf.shape(self.output)], message="tag_emb")
+

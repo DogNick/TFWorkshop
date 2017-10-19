@@ -50,7 +50,8 @@ def main():
 		#("news2s-twitter", None)
 		#("news2s-twitter-clean", 89401)
 		#("cvae-noattn-opensubtitle_gt3", None)
-		("cvaeattn2-weibo-bought", None)
+		#("cvaeattn2-weibo-bought", None)
+		("cvaeattn2-512-weibo-bought", None)
 		#("cvaeattn-subtitle_gt3_joint_prime_clean", None)
 		#("news2s-opensubtitle_gt3_joint_prime", None)
 	]

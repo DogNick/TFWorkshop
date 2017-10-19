@@ -18,7 +18,7 @@ class IntentHandler(ModelHandler):
 		# Multi model compatible, but here just one model exists
 		multi_models = []
 		for graph, stub in graph_stubs:
-			multi_models.append(self.run_model(graph, stub, [query.encode("utf-8")]))
+			multi_models.append(self.run_model(graph, stub, [query.encode("utf-8"), query.encode("utf-8")]))
 		outs = yield multi(multi_models)
 		# only use one model
 		res = {} 
@@ -28,7 +28,7 @@ class IntentHandler(ModelHandler):
 			else:
 				res[k] = str(v)
 				
-		raise gen.Return(([res], [], "tianchuan_cnn"))	
+		raise gen.Return(([res], [], "tianchuan_cnn_tag"))	
 
 	def form_multi_results(self, plan_results, infos): 
 		serverlg.info(plan_results)
