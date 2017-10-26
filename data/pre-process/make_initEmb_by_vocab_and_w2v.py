@@ -39,7 +39,6 @@ with codecs.open(dicfile) as f:
             break
 
 embedding = np.zeros((len(dic), dim), dtype = np.float32)
-#print (w2v[u"的".encode("utf-8")])
 
 for i, each in enumerate(dic):
     if each in w2v:

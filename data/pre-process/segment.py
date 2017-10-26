@@ -1,18 +1,26 @@
 import sys
 import os 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-model_path = os.path.abspath(os.path.join(dir_path, ".."))
-util_path = os.path.join(model_path, "models")
-
-sys.path.append(model_path)
-sys.path.append(util_path)
+import re
 
 from models import util 
 import codecs
-import re
 
-name = sys.argv[1] 
-cols = [int(c) for c in re.split(",", sys.argv[2])]
+import gflags
+FLAGS = gflags.FLAGS
+gflags.DEFINE_string("datafile", None, "data file to process, MUST BE SET")
+gflags.DEFINE_string("cols", "0", "colomns to consider in datafile, seperated by '\\t' ")
+gflags.MarkFlagAsRequired('datafile') 
+try:
+	FLAGS(sys.argv)
+except gflags.FlagsError as e:
+	print "\n%s" % e 
+	print FLAGS.GetHelp(include_special_flags=False) 
+	sys.exit(1)
+
+
+name = FLAGS.datafile 
+cols = [int(c) for c in re.split(",", FLAGS.cols)]
+
 #name = "data/STC-2/test" 
 vocab = {}
 
@@ -82,7 +90,3 @@ print "writing vocab..size: %d" % len(vocab)
 with codecs.open(os.path.join(dirname, "vocab"), "w") as f:
     for k, v in vocab.items():
         f.write("%s\t%d\n" % (k, v))
-
-        
-        
-

@@ -17,5 +17,3 @@ while True:
     topics = model[bow]
     for t in topics: 
         print t, model.print_topic(topicno=t[0], topn=10)
-
-

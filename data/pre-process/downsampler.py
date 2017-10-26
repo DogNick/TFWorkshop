@@ -37,8 +37,3 @@ with codecs.open(os.path.join(distdir, name) + ".downsample", "w") as f:
         if key_count[key] > 100: 
             wgts = 100.0 / float(key_count[key])
         f.write("%s\t%.5f\n" % (line, wgts))
-
-
-
-
-

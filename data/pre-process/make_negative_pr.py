@@ -32,6 +32,7 @@ with codecs.open(name) as f:
 print "posts: %d\n" % len(idx)
 
 name = os.path.basename(name)
+
 N = 2 
 fout = codecs.open(os.path.join(distdir, name+".neg"), "w")
 for i in range(len(idx)):
