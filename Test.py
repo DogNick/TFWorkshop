@@ -35,7 +35,8 @@ def main():
 	#name = "data/twitter_25w_filter_len_unk/test"
 	#name = "data/opensubtitle_gt3/test"
 	#name = "test_data/fangfei_lt10_0401_formalized"
-	name = "test_data/chat_diff"
+	#name = "test_data/chat_diff"
+	name = "test_data/p-100.test"
 	#name = "test_data/fangfei_lt10_0401_jointprime"
 	#name = "test_data/fangfei_lt10_0401_formalized_ask"
 	#name = "test_data/fangfei_lt10_0401_jointprime_ask"
@@ -50,14 +51,15 @@ def main():
 		#("news2s-twitter", None)
 		#("news2s-twitter-clean", 89401)
 		#("cvae-noattn-opensubtitle_gt3", None)
-		#("cvaeattn2-weibo-bought", None)
-		("cvaeattn2-512-weibo-bought", None)
+		("cvaeattn2-weibo-bought", None)
+		#("cvaeattn2-512-weibo-bought", None)
 		#("cvaeattn-subtitle_gt3_joint_prime_clean", None)
 		#("news2s-opensubtitle_gt3_joint_prime", None)
 	]
 	scorer_names = [ 
 		#("news2s-opensubtitle_gt3_reverse",  None)
 		#("news2s-opensubtitle_gt3_joint_reverse",  None)
+		#("news2s-weibo-bought_reverse",  None)
 	]
 
 	records = []
