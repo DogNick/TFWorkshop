@@ -43,15 +43,15 @@ class MatchFields(object):
 				uid, query, ans, fr) = matched.group(1), matched.group(2), matched.group(3), None, matched.group(4), matched.group(5), matched.group(6), None, None
 			elif self._logtype == "USR_BOT":
 				if matched.group(1) == "#USR#":
-					(logtype, uuid, ts, t, gid,
-					uid, query, ans, fr) = matched.group(1), matched.group(2), matched.group(3), None, matched.group(4), matched.group(5), matched.group(7), None, None
+					(logtype, uuid, ts, gid,
+					uid, query, ans, fr) = matched.group(1), matched.group(2), matched.group(3), matched.group(4), matched.group(5), matched.group(7), None, None
 				else:
-					(logtype, uuid, ts, t, gid,
-					uid, query, ans, fr) = matched.group(1), matched.group(2), matched.group(3), None, matched.group(4), matched.group(5), None, matched.group(7), matched.group(9)
+					(logtype, uuid, ts, gid,
+					uid, query, ans, fr) = matched.group(1), matched.group(2), matched.group(3), matched.group(4), matched.group(5), None, matched.group(7), matched.group(9)
 			else:
 				return None
-			query = re.sub("[\t ]+", " ", query)
-			ans = re.sub("[\t ]+", " ", ans)
+			query = re.sub("[\t ]+", " ", str(query))
+			ans = re.sub("[\t ]+", " ", str(ans))
 			return (logtype, query, ans, fr, gid, uid, ts) 
 		else:
 			return None
