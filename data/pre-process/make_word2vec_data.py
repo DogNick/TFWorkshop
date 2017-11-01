@@ -2,7 +2,22 @@ import codecs
 import sys
 import re
 
-name = sys.argv[1]
+import gflags
+FLAGS = gflags.FLAGS
+
+# transfer datafile with multi colomns into datafile with one colomn a line for google word2vec corpus
+
+gflags.DEFINE_string("datafile", None, "data file to make from")
+gflags.MarkFlagAsRequired('datafile') 
+
+try:
+	FLAGS(sys.argv)
+except gflags.FlagsError as e:
+	print "\n%s" % e 
+	print FLAGS.GetHelp(include_special_flags=False) 
+	sys.exit(1)
+
+name = FLAGS.datafile 
 with codecs.open(name) as f:
     with codecs.open(name + ".forw2v", "w") as fout:
         last = ""

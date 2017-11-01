@@ -6,14 +6,34 @@ import sys
 import os
 import re
 
+import gflags
+
+# Create an npy file given a google word2vec file(not binary) within the given dictfile
+# those unknown to dictfile in word2vec will be initialized randomly
+
+FLAGS = gflags.FLAGS
+gflags.DEFINE_string("dictfile", None, "dict file that hold all tokens used in model training")
+gflags.DEFINE_string("w2vfile", None, "google word2vec file, maybe very large")
+gflags.DEFINE_integer("topn", None, "Top N frequency tokens u want to filter the data with")
+
+gflags.MarkFlagAsRequired('dictfile') 
+gflags.MarkFlagAsRequired('topn') 
+gflags.MarkFlagAsRequired('w2vfile') 
+
+try:
+	FLAGS(sys.argv)
+except gflags.FlagsError as e:
+	print "\n%s" % e 
+	print FLAGS.GetHelp(include_special_flags=False) 
+	sys.exit(1)
 
 w2v = {}
 dim = 0 
 token_cnt = 0
 
-dicfile = sys.argv[1]
-w2vfile = sys.argv[2] 
-Nmax = int(sys.argv[3])
+dicfile = FLAGS.dictfile 
+w2vfile = FLAGS.w2vfile 
+topn = int(FLAGS.topn)
 npyfile = os.path.join(os.path.dirname(dicfile), os.path.basename(w2vfile) + ".npy")
 
 with codecs.open(w2vfile) as f: 
@@ -35,7 +55,7 @@ with codecs.open(dicfile) as f:
         line = line.strip()
         dic.append(line)
         count = count + 1
-        if count == Nmax:
+        if count == topn:
             break
 
 embedding = np.zeros((len(dic), dim), dtype = np.float32)

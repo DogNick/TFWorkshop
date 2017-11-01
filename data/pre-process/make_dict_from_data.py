@@ -3,10 +3,27 @@ import sys
 import re
 import os 
 
+import gflags
+FLAGS = gflags.FLAGS
 
-filename = sys.argv[1]
-outname = sys.argv[2] 
-cols = sys.argv[3]
+gflags.DEFINE_string("datafile", None, "datafile to process")
+gflags.DEFINE_string("outname", None, "Vocab name out")
+gflags.DEFINE_string("cols", None, "colomns to be considered in data, seperated by ','")
+
+gflags.MarkFlagAsRequired('datafile') 
+gflags.MarkFlagAsRequired('outname') 
+gflags.MarkFlagAsRequired('cols')
+try:
+	FLAGS(sys.argv)
+except gflags.FlagsError as e:
+	print "\n%s" % e 
+	print FLAGS.GetHelp(include_special_flags=False) 
+	sys.exit(1)
+
+filename = FLAGS.datafile 
+outname = FLAGS.topn 
+cols = FLAGS.cols 
+
 cols = [int(c) for c in re.split(",", cols)]
 vocab = {}
 with codecs.open(filename) as f:

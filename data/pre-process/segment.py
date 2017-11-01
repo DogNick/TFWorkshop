@@ -8,7 +8,7 @@ import codecs
 import gflags
 FLAGS = gflags.FLAGS
 gflags.DEFINE_string("datafile", None, "data file to process, MUST BE SET")
-gflags.DEFINE_string("cols", "0", "colomns to consider in datafile, seperated by '\\t' ")
+gflags.DEFINE_string("cols", "0", "colomns to consider in datafile(seperated by '\\t'), seperated by ',' ")
 gflags.MarkFlagAsRequired('datafile') 
 try:
 	FLAGS(sys.argv)
