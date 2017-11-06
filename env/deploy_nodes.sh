@@ -4,7 +4,7 @@ SERVER_DIR=/search/odin/Nick/GenerateWorkshop/servers
 
 #models="attn-s2s-all-downsample-addmem"
 #models="attn-bi-s2s-addmem-poem2 attn-bi-s2s-addmem-poem cvae-bi-simpleprior-attn-poem"
-models="vae-1024-attn-addmem"
+#models="vae-1024-attn-addmem"
 
 cat nodes | while read line 
 do

@@ -1,4 +1,5 @@
 #coding=utf-8
+import tornado
 import tornado.httpserver
 import tornado.options
 import tornado.ioloop
@@ -59,16 +60,17 @@ def main():
 	MAX_BATCH_SIZE = options.max_batch_size 
 
 	model_infos = {} 
-	for each in schedule:
-		host, port = schedule[each]["tf_server"].split(":")
-		gpu = schedule[each]["deploy_gpu"]
-		model_infos[each] = (each, host, port, gpu)
+	for model_conf in schedule["servables"]:
+		host, port = model_conf["tf_server"].split(":")
+		gpu = model_conf["deploy_gpu"]
+		name = model_conf["model"]
+		model_infos[name] = (name, host, port, gpu)
 
 	if options.submodels != "":
 		submodel_names = options.submodels.split(",")
 		for name in submodel_names:
 			if name not in model_infos:
-				serverlg.error("Error %s not in SERVER_SCHEDULES !" % name)
+				serverlg.error("Error %s not in SERVICE_SCHEDULES !" % name)
 				exit(0)
 			submodel_infos[name] = model_infos[name]
 	else:

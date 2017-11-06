@@ -1,4 +1,5 @@
 #coding=utf-8
+import codecs
 from ModelHandler import *
 # Global whitlist for poem servers
 match_poem_whitelist = {} 

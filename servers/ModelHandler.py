@@ -1,3 +1,22 @@
+#a.sys
+import abc
+import gc
+import json
+import logging
+import random
+import re
+import sys
+import time
+import urllib
+
+#b.outer
+from grpc.beta import implementations
+import numpy as np
+from tensorflow_serving.apis import predict_pb2
+from tensorflow_serving.apis import prediction_service_pb2
+from tensorflow.python.framework import tensor_util
+import tornado.web
+import tornado.gen
 from tornado.options import define, options, parse_command_line
 from tornado.locks import Event
 from tornado import gen, locks
@@ -5,36 +24,15 @@ from tornado.gen import multi
 from tornado.gen import Future
 from tornado.ioloop import IOLoop
 
-import gc
-import re
-import abc
-import sys
-import json
-import random
-import urllib
-import logging
-import tornado.web
-import tornado.gen
-import numpy as np
-
-#serverlg = logging.getLogger("server")
-serverlg = logging.getLogger("")
-from grpc.beta import implementations
-from tensorflow_serving.apis import predict_pb2
-from tensorflow_serving.apis import prediction_service_pb2
-
-import tensorflow as tf
-from tensorflow.python.framework import tensor_util
-
+#c.self
 sys.path.insert(0, "..")
-from models import SERVER_SCHEDULES 
-from models import confs
-from models import util
-from models import create 
+##############################################################################################################
+# use just everything same with that used during training in models/ to keep the INHERENT preproc and afterproc
+#############################################################################################################
+from models import create, util
+from service_schedules import SERVICE_SCHEDULES, DESC 
 
-
-from models.Nick_plan import * 
-from models.Tsinghua_plan import * 
+serverlg = logging.getLogger("")
 
 def _fwrap(f, gf):
 	try:
@@ -58,20 +56,20 @@ def fwrap(gf, ioloop=None):
 	gf.add_done_callback(lambda _: ioloop.add_callback(_fwrap, f, gf))
 	return f
 
-schedule = SERVER_SCHEDULES[options.service][options.schedule]
+schedule = SERVICE_SCHEDULES[options.service][options.schedule]
 class ModelHandler(tornado.web.RequestHandler):
 	__metaclass__ = abc.ABCMeta
 	serverlg.info('[ModelServer] [Initialization: service %s, schedule %d] [%s]' % 
 					(options.service, options.schedule, time.strftime('%Y-%m-%d %H:%M:%S')))
-	for conf_name in schedule:
+	for i, model_conf in enumerate(schedule["servables"]):
 		#may be deprecated
-		graph = create(conf_name)
-		graph.apply_deploy_conf(schedule[conf_name])
+		graph = create(model_conf["model"])
+		graph.apply_deploy_conf(model_conf)
 
-		host, port = schedule[conf_name]["tf_server"].split(":")
+		host, port = model_conf["tf_server"].split(":")
 		channel = implementations.insecure_channel(host, int(port))
 		stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
-		schedule[conf_name]["graph_stub"] = (graph, stub) 
+		schedule["servables"][i]["graph_stub"] = (graph, stub) 
 
 	@abc.abstractmethod
 	def handle(self): 
@@ -85,7 +83,7 @@ class ModelHandler(tornado.web.RequestHandler):
 		results = []
 		debug_infos = []
 		 
-		graph_stubs = [schedule[name]["graph_stub"] for name in schedule]
+		graph_stubs = [model_conf["graph_stub"] for model_conf in schedule]
 		# Multi model compatible, but here just one model exists
 		multi_models = []
 		for graph, stub in graph_stubs:
@@ -112,12 +110,14 @@ class ModelHandler(tornado.web.RequestHandler):
 		values = feed_data.values()	
 		N = 100 
 		keys = feed_data.keys()
+		# Just for logging 
 		for i, example in enumerate(zip(*feed_data.values())):
 			if i == N:
 				break
 			for j, v in enumerate(example):
 				serverlg.info('[DispatcherServer] [%d][%s] %s' % (i, keys[j], str(v)))
 
+		# Form model request
 		for key, value in feed_data.items():
 			v = np.array(value) 
 			value_tensor = tensor_util.make_tensor_proto(value, shape=v.shape)
