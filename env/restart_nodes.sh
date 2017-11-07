@@ -12,6 +12,8 @@ do
     DEST=${line%% *} 
     echo " ===========================  Sync and restart "$DEST" ==================================="
     ssh $DEST "cd $DEST_DIR/servers; mkdir -p deployments" 
+    ssh $DEST "cd $DEST_DIR; git config --global user.email 'lihangyu@sogou-inc.com'" 
+    ssh $DEST "cd $DEST_DIR; git config --global user.name 'Nick'" 
     ssh $DEST "cd $DEST_DIR;git checkout .;git pull" 
 	ssh $DEST "cd $DEST_DIR/servers; mkdir -p logs;"
 #./start.expect ${line} 

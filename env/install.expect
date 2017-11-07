@@ -12,33 +12,33 @@ set tfpkg "tensorflow-1.2.0rc0-cp27-cp27mu-linux_x86_64.whl"
 #       Send packages or files to node for environment setup     # 
 ##################################################################
 #
-spawn ssh $node
-expect {
-    "yes/no" { 
-        send "yes\n" 
-        expect { "*password*" { send "$password\n" } }
-    }
-    "*password*" { send "$password\n" }
-    "]#" { send "ls\n" } 
-}
-expect "]#"
-send "cd $dest_dir\n" 
-expect "]#"
-send "mkdir -p online_package\n" 
-expect "]#"
-send "exit\n" 
-expect "]#"
-
-# pip
-spawn scp -r $online_package_dir/pip-9.0.1.tar.gz $node:$dest_dir
-expect {
-    "yes/no" { 
-        send "yes\n" 
-        expect { "*password*" { send "$password\n" } }
-    }
-    "*password*" { send "$password\n" }
-}
-expect "]#"
+#spawn ssh $node
+#expect {
+#    "yes/no" { 
+#        send "yes\n" 
+#        expect { "*password*" { send "$password\n" } }
+#    }
+#    "*password*" { send "$password\n" }
+#    "]#" { send "ls\n" } 
+#}
+#expect "]#"
+#send "cd $dest_dir\n" 
+#expect "]#"
+#send "mkdir -p online_package\n" 
+#expect "]#"
+#send "exit\n" 
+#expect "]#"
+#
+## pip
+#spawn scp -r $online_package_dir/pip-9.0.1.tar.gz $node:$dest_dir
+#expect {
+#    "yes/no" { 
+#        send "yes\n" 
+#        expect { "*password*" { send "$password\n" } }
+#    }
+#    "*password*" { send "$password\n" }
+#}
+#expect "]#"
 
 # bashrc
 #spawn scp -r $online_package_dir/node_bashrc $node:/root/.bashrc
@@ -150,30 +150,30 @@ expect "]#"
 ##########################################################
 #         Install pip and Tensorflow Package             #
 ##########################################################
-send "cd $dest_dir\n"
-expect "]#" 
-send "tar -xvf pip*.tar*\n"
-expect "]#"
-send "yum install python-devel\n"
-expect {
-    "y/d/N]" { 
-        send "y\n" 
-        expect "]#"
-        send "cd ./pip-9.0.1\n"
-    }
-
-    "y/N]" { 
-        send "y\n" 
-        expect "]#"
-        send "cd ./pip-9.0.1\n"
-    }
-    "]#" { send "cd ./pip-9.0.1\n" }
-}
-expect "]#"
-send "python setup.py build\n"
-expect "]#"
-send "python setup.py install\n"
-expect "]#"
+#send "cd $dest_dir\n"
+#expect "]#" 
+#send "tar -xvf pip*.tar*\n"
+#expect "]#"
+#send "yum install python-devel\n"
+#expect {
+#    "y/d/N]" { 
+#        send "y\n" 
+#        expect "]#"
+#        send "cd ./pip-9.0.1\n"
+#    }
+#
+#    "y/N]" { 
+#        send "y\n" 
+#        expect "]#"
+#        send "cd ./pip-9.0.1\n"
+#    }
+#    "]#" { send "cd ./pip-9.0.1\n" }
+#}
+#expect "]#"
+#send "python setup.py build\n"
+#expect "]#"
+#send "python setup.py install\n"
+#expect "]#"
 
 #send "pip uninstall $tfpkg\n"
 #expect {
@@ -189,18 +189,22 @@ expect "]#"
 ############################################
 #       Get Nick's Workshop Repo           #
 ############################################
-#send "cd $dest_dir; mkdir -p offline; cd offline\n"
-#expect "]#"
-#send "git clone http://gitlab.dev.sogou-inc.com/Nick/Workshop.git\n"
-#expect {
-#    "yes/no" { 
-#        send "yes\n" 
-#    }
-#    "]#" { send "ls\n" }
-#}
-#expect "]#"
-#send "cd Workshop\n"
-#expect "]#"
-#send "sh README\n"
-#expect "]#" 
+send "cd $dest_dir; mkdir -p offline; cd offline\n"
+expect "]#"
+send "rm -rf TFWorkshop\n"
+expect "]#"
+send "git clone https://git.sogou-inc.com/intelligent-dialogue/TFWorkshop.git\n"
+expect {
+    "Username" { 
+        send "lihangyu\n" 
+		expect "Password" 
+		send "Liaowei131\n"
+    }
+    "]#" { send "ls\n" }
+}
+expect "]#"
+send "cd Workshop\n"
+expect "]#"
+send "sh README\n"
+expect "]#" 
 #send "/bin/cp $dest_dir/online_package/tensorflow_model_server $dest_dir/offline/Workshop\n"
