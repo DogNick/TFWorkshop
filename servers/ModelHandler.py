@@ -29,8 +29,8 @@ sys.path.insert(0, "..")
 ##############################################################################################################
 # use just everything same with that used during training in models/ to keep the INHERENT preproc and afterproc
 #############################################################################################################
-from models import create, util
-from service_schedules import SERVICE_SCHEDULES, DESC 
+import models
+from service_schedules import SERVICE_SCHEDULES
 
 serverlg = logging.getLogger("")
 
@@ -56,21 +56,13 @@ def fwrap(gf, ioloop=None):
 	gf.add_done_callback(lambda _: ioloop.add_callback(_fwrap, f, gf))
 	return f
 
-schedule = SERVICE_SCHEDULES[options.service][options.schedule]
+
 class ModelHandler(tornado.web.RequestHandler):
 	__metaclass__ = abc.ABCMeta
-	serverlg.info('[ModelServer] [Initialization: service %s, schedule %d] [%s]' % 
-					(options.service, options.schedule, time.strftime('%Y-%m-%d %H:%M:%S')))
-	for i, model_conf in enumerate(schedule["servables"]):
-		#may be deprecated
-		graph = create(model_conf["model"])
-		graph.apply_deploy_conf(model_conf)
-
-		host, port = model_conf["tf_server"].split(":")
-		channel = implementations.insecure_channel(host, int(port))
-		stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
-		schedule["servables"][i]["graph_stub"] = (graph, stub) 
-
+	servables = [] 
+	def initialize(self, schedule):
+		self.schedule = schedule 
+	
 	@abc.abstractmethod
 	def handle(self): 
 		query = self.get_argument('query', None)
@@ -83,7 +75,7 @@ class ModelHandler(tornado.web.RequestHandler):
 		results = []
 		debug_infos = []
 		 
-		graph_stubs = [model_conf["graph_stub"] for model_conf in schedule]
+		graph_stubs = [model_conf["graph_stub"] for model_conf in schedule["servables"]]
 		# Multi model compatible, but here just one model exists
 		multi_models = []
 		for graph, stub in graph_stubs:

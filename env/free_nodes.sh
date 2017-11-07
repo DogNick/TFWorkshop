@@ -1,5 +1,9 @@
 #!/bin/bash
-pub_key=/search/odin/Nick/.ssh/id_rsa.pub
+
+# Only for 104.69
+# pub_key=/search/odin/Nick/.ssh/id_rsa.pub
+
+pub_key=/root/.ssh/id_rsa.pub
 
 cat nodes | while read line 
 do

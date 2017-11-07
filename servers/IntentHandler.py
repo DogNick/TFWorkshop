@@ -2,7 +2,7 @@ from ModelHandler import *
 class IntentHandler(ModelHandler):
 	@tornado.gen.coroutine
 	def handle(self):  
-
+		schedule = self.schedule
 		query = self.get_argument('query', None)
 		if not query:
 			ret = {}
@@ -13,7 +13,7 @@ class IntentHandler(ModelHandler):
 		results = []
 		debug_infos = []
 		 
-		graph_stubs = [schedule[name]["graph_stub"] for name in schedule]
+		graph_stubs = [schedule[name]["graph_stub"] for name in schedule["servables"]]
 		model_names = [name for name in schedule]
 		# Multi model compatible, but here just one model exists
 		multi_models = []

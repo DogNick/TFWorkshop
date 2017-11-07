@@ -11,6 +11,7 @@ def cos_cdist(matrix, vector):
 class ScoreHandler(ModelHandler):
 	@tornado.gen.coroutine
 	def handle(self):  
+		schedule = self.schedule
 		# collect infos for current request
 		data = json.loads(self.request.body)
 		query = data["query"]
@@ -37,7 +38,7 @@ class ScoreHandler(ModelHandler):
 
 		# different records type for different models
 		multi_models = []
-		for name in schedule:
+		for model_conf in schedule["servables"]:
 			g, stub = schedule[name]["graph_stub"]
 			if name.find("_reverse") != -1:
 				multi_models.append(self.run_model(g, stub, posterior_records, use_seg=False))

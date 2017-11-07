@@ -7,6 +7,7 @@ from models.Nick_plan import score_with_prob_attn
 class ChatENHandler(ModelHandler):
 	@tornado.gen.coroutine
 	def handle(self):  
+		schedule = self.schedule
 		query = self.get_argument('query', None)
 		n = self.get_argument('n', 10)
 		self.debug = self.get_argument("debug", "0")
@@ -82,7 +83,7 @@ class ChatENHandler(ModelHandler):
 		results = [each[0] for each in sorted_res[0:n]] 
 		debug_infos = [each[1] for each in sorted_res[0:n]]
 
-		raise gen.Return((results, debug_infos, DESC["chaten"]))
+		raise gen.Return((results, debug_infos, schedule["desc"]))
 
 	def form_multi_results(self, plan_results, infos): 
 		multi_results = []
@@ -94,51 +95,10 @@ class ChatENHandler(ModelHandler):
 		random.shuffle(multi_results)
 		return multi_results
 
-
-class TsinghuaHandler(ModelHandler):
-	@tornado.gen.coroutine
-	def handle(self):  
-		query = self.get_argument('query', None)
-		n = self.get_argument('n', 5)
-		if not query:
-			ret = {}
-			ret["status"] = "missing params"
-			serverlg.info('[chatbot] [ERROR: missing params] [REQUEST] [%s] [%s]' % (time.strftime('%Y-%m-%d %H:%M:%S'), self.request.uri))
-			self.write(json.dumps(ret, ensure_ascii=False))
-			self.finish()
-
-		results = []
-		debug_infos = []
-
-		words = util.tokenize_word(query.encode("utf-8"))
-		# beam_search generate 
-		graph, stub = schedule["tsinghua"]["graph_stub"]
-		resp_probs = yield self.run_model(graph, stub, [words])  
-
-		resp_probs = resp_probs[0:10]
-
-		# get posterior probability
-		pairs = [(words, each[0]) for each in resp_probs]  
-		graph, stub = schedule["postprob"]["graph_stub"]
-		post_probs = yield self.run_model(graph, stub, pairs)
-
-		# rerank
-		cans = [("".join(each[0]), each[1], post_probs[i]) for i, each in enumerate(resp_probs)]
-		results = postprob_rerank(words, cans)
-
-		results = results[0:n] 
-		debug_infos = [{"rank":i + 1} for i in range(n)]  
-		raise gen.Return((results, debug_infos, DESC["Tsinghua"]))
-
-	def form_multi_results(self, plan_results, infos): 
-		multi_results = []
-		for i, each in enumerate(plan_results):
-			multi_results.append({"answer":each, "debug_info":infos[i]})
-		return multi_results
-
 class GenerateHandler(ModelHandler):
 	@tornado.gen.coroutine
 	def handle(self):  
+		schedule = self.schedule
 		query = self.get_argument('query', None)
 		n = self.get_argument('n', 10)
 		self.debug = self.get_argument("debug", "0")
@@ -217,7 +177,7 @@ class GenerateHandler(ModelHandler):
 		results = [each[0] for each in sorted_res[0:n]] 
 		debug_infos = [each[1] for each in sorted_res[0:n]]
 
-		raise gen.Return((results, debug_infos, DESC["cvae-generate"]))
+		raise gen.Return((results, debug_infos, schedule.get("desc", "no description")))
 
 	def form_multi_results(self, plan_results, infos): 
 		multi_results = []

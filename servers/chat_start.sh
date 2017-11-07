@@ -11,7 +11,7 @@
 
 PORT=9001
 SERVICE=generate
-SCHEDULE=4
+SCHEDULE=cvae_posterior_cn
 sh stop.sh $PORT 
 nohup python -u Servers.py \
     --port=$PORT --procnum=4 \

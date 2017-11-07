@@ -26,7 +26,7 @@ define("max_enqueued_batches", default=32, help="", type=int)
 define("max_batch_size", default=64, help="", type=int)
 
 define("service", default="generate", help="server name", type=bytes)
-define("schedule", default=0, help="server schedule id", type=int)
+define("schedule", default=None, help="server schedule id", type=bytes)
 
 parse_command_line()
 
@@ -44,7 +44,6 @@ serverlg = logging.getLogger("")
 #exclg.setLevel(logging.DEBUG)
 #exclg.addHandler(fh)
 
-from DeepMatchHandler import *
 from GenerateHandler import *
 from PoemHandler import *
 from IntentHandler import * 
@@ -59,29 +58,39 @@ def main():
 	MAX_ENQUEUED_BATCHES = options.max_enqueued_batches 
 	MAX_BATCH_SIZE = options.max_batch_size 
 
+	# Multi service support is coming soon... 
+	if options.service not in SERVICE_SCHEDULES:
+		raise ValueError("service name %s not in SERVICE_SCHEDULES" % options.service)
+		exit(1)
+	if options.schedule not in SERVICE_SCHEDULES[options.service]:
+		raise ValueError("schedule name %s not in %s service defined in SERVICE_SCHEDULES" % (options.schedule, options.service))
+		exit(1)
+
+	schedule = SERVICE_SCHEDULES[options.service][options.schedule]
+	serverlg.info('[Graph and servable stubs] [Initialization: service %s, schedule %s] [%s]' % 
+					(options.service, options.schedule, time.strftime('%Y-%m-%d %H:%M:%S')))
+
+	# Build model infos of (graph, service_stub) tuple with its model conf and service conf
 	model_infos = {} 
-	for model_conf in schedule["servables"]:
+	for i, model_conf in enumerate(schedule["servables"]):
 		host, port = model_conf["tf_server"].split(":")
-		gpu = model_conf["deploy_gpu"]
+		channel = implementations.insecure_channel(host, int(port))
+		stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
+
 		name = model_conf["model"]
+		gpu = model_conf["deploy_gpu"]
+		graph = models.create(name)
+		graph.apply_deploy_conf(model_conf)
+		schedule["servables"][i]["graph_stub"] = (graph, stub) 
 		model_infos[name] = (name, host, port, gpu)
 
-	if options.submodels != "":
-		submodel_names = options.submodels.split(",")
-		for name in submodel_names:
-			if name not in model_infos:
-				serverlg.error("Error %s not in SERVICE_SCHEDULES !" % name)
-				exit(0)
-			submodel_infos[name] = model_infos[name]
-	else:
-		submodel_infos = model_infos
-
+	# Start tensorflow-serving backends according to parsed model_infos
 	children = []
-	for key in submodel_infos:
+	for key in model_infos:
 		env = os.environ.copy()
 		runtime_name, host, port, gpu = model_infos[key] 
-		print gpu
-		#env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+		env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+		env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
 		command = "./tensorflow_model_server --enable_batching=true" \
 				  " --port=%d" \
 				  " --model_name=%s" \
@@ -102,9 +111,6 @@ def main():
 		serverlg.info("Start tensorflow model server [%s] %s:%d gpu:%s" % (runtime_name, host, int(port), str(gpu)))
 		children.append(child)
 
-	#for child in children:
-	#	child.wait()
-
 	def signal_handler(signum, frame):
 		for child in children:
 			os.killpg(os.getpgid(child.pid), signum)
@@ -114,7 +120,6 @@ def main():
 	signal.signal(signal.SIGINT, signal_handler)
 	signal.signal(signal.SIGTERM, signal_handler)
 	HandlerMap = {
-			"tsinghua": TsinghuaHandler,
 			"generate": GenerateHandler,
 			"matchpoem": MatchPoemHandler,
 			"judgepoem": JudgePoemHandler,
@@ -127,15 +132,17 @@ def main():
 	try:
 		app = tornado.web.Application(
 				[
-					(r'/%s' % options.service, HandlerMap[options.service]),
+					(r'/%s' % options.service, HandlerMap[options.service], dict(schedule=schedule)),
 				]
 		)
+
 		server = tornado.httpserver.HTTPServer(app)
 		server.bind(options.port)
 		server.start(options.procnum)
 		serverlg.info("[SERVICE START] Generate adptor server start, listen on %d" % options.port)
 		tornado.ioloop.IOLoop.instance().start()
-	except:
+	except Exception, e:
+		serverlg.error("[EXCEPTION] %s" % traceback.format_exc(e))
 		for child in children:
 			os.killpg(os.getpgid(child.pid), signal.SIGTERM)
 			serverlg.warning('You killed  child %d' % child.pid)

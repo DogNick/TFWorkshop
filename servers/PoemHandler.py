@@ -11,6 +11,7 @@ with codecs.open("server_data/match_poem.whitelist", "r", "utf-8") as f:
 class MatchPoemHandler(ModelHandler):
 	@tornado.gen.coroutine
 	def handle(self):  
+		schedule=self.schedule
 		query = self.get_argument('query', None)
 		n = int(self.get_argument('n', 10))
 		if not query:
@@ -27,8 +28,8 @@ class MatchPoemHandler(ModelHandler):
 		if query in match_poem_whitelist:
 			results.extend([("whitelist", each.encode("utf-8"), 0.0) for each in match_poem_whitelist[query]])
 		else:
-			graph_stubs = [schedule[name]["graph_stub"] for name in schedule]
-			model_names = [name for name in schedule]
+			graph_stubs = [model_conf["graph_stub"] for model_conf in schedule["servables"]]
+			model_names = [model_conf["model"] for model_conf in schedule["servables"]]
 			multi_models = []
 			for graph, stub in graph_stubs:
 				#graph.conf.input_max_len = schedule[name].get("max_in", graph.conf.input_max_len)
@@ -57,7 +58,7 @@ class MatchPoemHandler(ModelHandler):
 			if len(selected) == n:
 				break
 
-		raise gen.Return((selected, infos, DESC["matchpoem"]))
+		raise gen.Return((selected, infos, schedule.get("desc", "no description")))
 
 	def form_multi_results(self, plan_results, infos): 
 		multi_results = []
@@ -69,6 +70,7 @@ class MatchPoemHandler(ModelHandler):
 class JudgePoemHandler(ModelHandler):
 	@tornado.gen.coroutine
 	def handle(self):  
+		schedule=self.schedule
 		query = self.get_argument('query', None)
 		if not query:
 			ret = {}
@@ -87,7 +89,7 @@ class JudgePoemHandler(ModelHandler):
 				examples.append(seg)
 
 		if examples == []:
-			raise gen.Return(([], [], DESC["judgepoem"]))
+			raise gen.Return(([], [], schedule.get("desc", "no description")))
 
 		# remove whitelist item from models
 		examples_to_infer = []
@@ -103,8 +105,8 @@ class JudgePoemHandler(ModelHandler):
 				serverlg.info("infer %s" % examples_to_infer[-1])
 				
 		if examples_to_infer:
-			graph_stubs = [schedule[name]["graph_stub"] for name in schedule]
-			model_names = [name for name in schedule]
+			graph_stubs = [model_conf["graph_stub"] for model_conf in schedule["servables"]]
+			model_names = [model_conf["model"] for model_conf in schedule["servables"]]
 			multi_models = []
 			for graph, stub in graph_stubs:
 				multi_models.append(self.run_model(graph, stub, examples_to_infer, use_seg=False))
@@ -113,7 +115,7 @@ class JudgePoemHandler(ModelHandler):
 				results.append(re.sub(" +", "", each))
 				infos.append({"judge_prob": str(tag_probs[i])})
 
-		raise gen.Return((results, infos, DESC["judgepoem"]))
+		raise gen.Return((results, infos, schedule.get("desc", "no description")))
 
 	def form_multi_results(self, plan_results, infos): 
 		multi_results = []

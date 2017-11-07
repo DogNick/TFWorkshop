@@ -28,7 +28,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 
 # Here from my own's models
 from models import confs
-from models import SERVER_SCHEDULES 
+from servers import SERVICE_SCHEDULES 
 from models import create, join_param_server, init_inference, init_dummy_train, init_monitored_train  
 
 EOS_ID = 2
@@ -84,23 +84,24 @@ def main(_):
 	# Export for deployment
 	elif FLAGS.cmd == "export": 
 		if FLAGS.schedule != None:
-			schedule = SERVER_SCHEDULES[FLAGS.service][FLAGS.schedule]
+			schedule = SERVICE_SCHEDULES[FLAGS.service][FLAGS.schedule]
 		else:
-			schedule["Null"] = {conf_name:{}}
-		for conf_name in schedule:
+			schedule["servables"] = [] 
+		for model_conf in schedule["servables"]:
+			conf_name = model_conf["model"]
 			model = create(conf_name, job_type=FLAGS.job_type, task_id=FLAGS.task_id)
 			if conf_name not in confs:
 				print("\nNo model conf '%s' found !!!! Skipped\n" % conf_name)
 				exit(0)
 
-			if schedule[conf_name].get("export", True) == False:
+			if model_conf.get("export", True) == False:
 				continue
 
 			model = create(conf_name, job_type="single", task_id=0)
-			model.apply_deploy_conf(schedule[conf_name])	
+			model.apply_deploy_conf(model_conf)	
 
-			ckpt_steps = schedule[conf_name].get("ckpt_steps", None) 
-			gpu = schedule[conf_name].get("deploy_gpu", 0)
+			ckpt_steps = model_conf.get("ckpt_steps", None) 
+			gpu = model_conf.get("deploy_gpu", 0)
 			sess, graph_nodes, ckpt_steps = init_inference(runtime_root=FLAGS.train_root, model_core=model, gpu=gpu, ckpt_steps=ckpt_steps)
 
 			# do it
